@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -18,6 +19,7 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateUser(ctx context.Context, user User) error {
+	fmt.Println("[REPO] Starting CreateUser for email:", user.Email)
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO users (
 			id, email, password_hash, first_name, last_name, date_of_birth,
@@ -35,10 +37,16 @@ func (r *Repository) CreateUser(ctx context.Context, user User) error {
 		nullIfEmpty(user.AboutMe),
 		user.ProfileVisibility,
 	)
+	if err != nil {
+		fmt.Println("[REPO] CreateUser failed")
+	} else {
+		fmt.Println("[REPO] CreateUser success")
+	}
 	return err
 }
 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	fmt.Println("[REPO] Starting GetUserByEmail for:", email)
 	var user User
 
 	err := r.db.QueryRowContext(ctx, `
@@ -62,9 +70,14 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (User, er
 		&user.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
+		fmt.Println("[REPO] GetUserByEmail: no rows")
 		return User{}, ErrUserNotFound
 	}
-
+	if err != nil {
+		fmt.Println("[REPO] GetUserByEmail failed")
+	} else {
+		fmt.Println("[REPO] GetUserByEmail success")
+	}
 	return user, err
 }
 
@@ -100,10 +113,16 @@ func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (
 }
 
 func (r *Repository) CreateSession(ctx context.Context, session Session) error {
+	fmt.Println("[REPO] Starting CreateSession for user ID:", session.UserID)
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, user_id, expires_at)
 		VALUES (?, ?, ?);
 	`, session.ID, session.UserID, session.ExpiresAt)
+	if err != nil {
+		fmt.Println("[REPO] CreateSession failed")
+	} else {
+		fmt.Println("[REPO] CreateSession success")
+	}
 	return err
 }
 

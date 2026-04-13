@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -40,12 +41,15 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("[HANDLER] Register request started for email:", input.Email)
+
 	user, session, err := h.service.Register(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
+	fmt.Println("[HANDLER] Register response: success")
 	setSessionCookie(w, session)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"message": "registration successful",
@@ -65,12 +69,15 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("[HANDLER] Login request started for email:", input.Email)
+
 	user, session, err := h.service.Login(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
+	fmt.Println("[HANDLER] Login response: success")
 	setSessionCookie(w, session)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "login successful",
@@ -165,6 +172,7 @@ func setSessionCookie(w http.ResponseWriter, session Session) {
 		Expires:  session.ExpiresAt,
 		MaxAge:   int(time.Until(session.ExpiresAt).Seconds()),
 	})
+	fmt.Println("ok!")
 }
 
 func clearSessionCookie(w http.ResponseWriter) {

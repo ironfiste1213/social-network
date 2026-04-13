@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,7 +27,9 @@ func NewService(repo *Repository) *Service {
 }
 
 func (s *Service) Register(ctx context.Context, input RegisterInput) (User, Session, error) {
+	fmt.Println("[SERVICE] Register started for email:", input.Email)
 	if err := validateRegisterInput(input); err != nil {
+		fmt.Println("[SERVICE] Register validation failed")
 		return User{}, Session{}, err
 	}
 
@@ -53,44 +56,62 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (User, Sess
 		ProfileVisibility: "public",
 	}
 
+	fmt.Println("[SERVICE] Register calling CreateUser")
 	if err := s.repo.CreateUser(ctx, user); err != nil {
+		fmt.Println("[SERVICE] Register CreateUser failed")
 		return User{}, Session{}, err
 	}
+	fmt.Println("[SERVICE] Register user created successfully")
 
+	fmt.Println("[SERVICE] Register creating session")
 	session := newSession(user.ID)
 	if err := s.repo.CreateSession(ctx, session); err != nil {
+		fmt.Println("[SERVICE] Register session creation failed")
 		return User{}, Session{}, err
 	}
+	fmt.Println("[SERVICE] Register session created successfully")
 
+	fmt.Println("[SERVICE] Register fetching created user by email")
 	createdUser, err := s.repo.GetUserByEmail(ctx, user.Email)
 	if err != nil {
+		fmt.Println("[SERVICE] Register GetUserByEmail failed")
 		return User{}, Session{}, err
 	}
+	fmt.Println("[SERVICE] Register user fetched successfully")
 
 	return createdUser, session, nil
 }
 
 func (s *Service) Login(ctx context.Context, input LoginInput) (User, Session, error) {
+	fmt.Println("[SERVICE] Login started for email:", input.Email)
 	if strings.TrimSpace(input.Email) == "" || input.Password == "" {
+		fmt.Println("[SERVICE] Login validation failed")
 		return User{}, Session{}, ErrInvalidInput
 	}
 
 	user, err := s.repo.GetUserByEmail(ctx, strings.TrimSpace(strings.ToLower(input.Email)))
 	if err != nil {
+		fmt.Println("[SERVICE] Login user not found or error")
 		if errors.Is(err, ErrUserNotFound) {
 			return User{}, Session{}, ErrInvalidCredentials
 		}
 		return User{}, Session{}, err
 	}
+	fmt.Println("[SERVICE] Login user found")
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		fmt.Println("[SERVICE] Login password mismatch")
 		return User{}, Session{}, ErrInvalidCredentials
 	}
+	fmt.Println("[SERVICE] Login password match")
 
+	fmt.Println("[SERVICE] Login creating session")
 	session := newSession(user.ID)
 	if err := s.repo.CreateSession(ctx, session); err != nil {
+		fmt.Println("[SERVICE] Login session creation failed")
 		return User{}, Session{}, err
 	}
+	fmt.Println("[SERVICE] Login session created successfully")
 
 	return user, session, nil
 }
