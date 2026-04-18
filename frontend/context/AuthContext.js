@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getCurrentUser, login as loginAPI, logout as logoutAPI } from '../services/auth.js';
+import { getCurrentUser, login as loginAPI, logout as logoutAPI, register as registerAPI } from '../services/auth.js';
 
 const AuthContext = createContext();
 
@@ -10,7 +10,7 @@ export function AuthProvider({ children }) {
   const initUser = async () => {
     try {
       const data = await getCurrentUser();
-      setUser(data);
+      setUser(data.user ?? null);
     } catch {
       setUser(null);
     } finally {
@@ -25,12 +25,22 @@ export function AuthProvider({ children }) {
   const login = async (data) => {
     try {
       const userData = await loginAPI(data);
-      setUser(userData);
+      setUser(userData.user);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message || 'Login failed' };
     }
   };
+
+  const register = async (input) => {
+    try {
+      const data = await registerAPI(input);
+      setUser(data.user);
+      return { success: true};
+    } catch (error) {
+      return { success: false, error: error.message || 'Register failed'}
+    }
+  }
 
   const logout = async () => {
     try {
@@ -46,6 +56,7 @@ export function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    register,
   };
 
   return (
