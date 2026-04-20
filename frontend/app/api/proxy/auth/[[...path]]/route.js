@@ -2,20 +2,24 @@ import { NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 
-export async function GET(request, { params }) {
-  return proxyRequest(request, params.path);
+export async function GET(request, context) {
+  const { path } = await context.params;
+  return proxyRequest(request, path);
 }
 
-export async function POST(request, { params }) {
-  return proxyRequest(request, params.path);
+export async function POST(request, context) {
+  const { path } = await context.params;
+  return proxyRequest(request, path);
 }
 
-export async function PUT(request, { params }) {
-  return proxyRequest(request, params.path);
+export async function PUT(request, context) {
+  const { path } = await context.params;
+  return proxyRequest(request, path);
 }
 
-export async function DELETE(request, { params }) {
-  return proxyRequest(request, params.path);
+export async function DELETE(request, context) {
+  const { path } = await context.params;
+  return proxyRequest(request, path);
 }
 
 async function proxyRequest(request, pathSegments = []) {
