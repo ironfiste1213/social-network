@@ -4,7 +4,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-
+	//"os/user"
+	"social-network/backend/pkg/users"
 	"social-network/backend/pkg/auth"
 	"social-network/backend/pkg/db/sqlite"
 )
@@ -27,6 +28,8 @@ func main() {
 	mux := http.NewServeMux()
 	authHandler := auth.NewHandler(db)
 	authHandler.RegisterRoutes(mux)
+	usersHnadler := users.NewHandler(db, "")
+	usersHnadler.RegisterRoutes(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
