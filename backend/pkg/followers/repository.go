@@ -23,7 +23,7 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 // IsFollowing returns true if followerID follows followingID
-func (r *Repository) IsFollowing(ctx context.Context, followingID, followerID string) (bool, error) {
+func (r *Repository) IsFollowing(ctx context.Context, followerID, followingID string) (bool, error) {
 	fmt.Println("[FOLLOWERS][REPO] IsFollowing follower:", followerID, "target:", followingID)
 	var count int
 	err := r.db.QueryRowContext(ctx,

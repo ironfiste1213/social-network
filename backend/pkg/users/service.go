@@ -49,3 +49,7 @@ func (s *Service) SearchUsers(ctx context.Context, viewerID, query string, limit
 
 	return s.repo.SearchUsersByNickname(ctx, viewerID, trimmedQuery, limit)
 }
+
+func (s *Service) IsFollowing(ctx context.Context, followerID, followingID string) (bool, error) {
+	return s.repo.IsFollowing(ctx, followerID, followingID)
+}

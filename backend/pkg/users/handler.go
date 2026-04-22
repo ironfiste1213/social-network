@@ -220,7 +220,17 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 
 	if profile.ProfileVisibility == "private" {
 		isOwner := requester != nil && requester.ID == profile.ID
-		if !isOwner {
+		canView := isOwner
+		if !canView && requester != nil {
+			following, err := h.service.IsFollowing(r.Context(), requester.ID, profile.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to get user")
+				return
+			}
+			canView = following
+		}
+
+		if !canView {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"user": map[string]any{
 					"id":                 profile.ID,

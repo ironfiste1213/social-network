@@ -8,6 +8,7 @@ import (
 	"social-network/backend/pkg/auth"
 	"social-network/backend/pkg/db/sqlite"
 	"social-network/backend/pkg/followers"
+	"social-network/backend/pkg/posts"
 	"social-network/backend/pkg/users"
 )
 
@@ -29,25 +30,25 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Auth handler
+	// Auth
 	authHandler := auth.NewHandler(db)
 	authHandler.RegisterRoutes(mux)
 
-	
-	
-
-	// Users handler
+	// Users
 	usersHandler := users.NewHandler(db, uploadDir)
 	usersHandler.RegisterRoutes(mux)
 
-	// Followers handler — shares getUserID
+	// Followers
 	followersHandler := followers.NewHandler(db)
 	followersHandler.RegisterRoutes(mux)
-
-	// Expose followers sub-routes under /users/{id}/ via the users handler
 	usersHandler.SetFollowersHandler(followersHandler)
 
-	// Serve uploaded files
+	// Posts
+	postsHandler := posts.NewHandler(db, uploadDir)
+	postsHandler.RegisterRoutes(mux)
+	mux.HandleFunc("/posts/my-followers", postsHandler.GetMyFollowers)
+
+	// Static uploads
 	mux.Handle("/uploads/", users.ServeUploads(uploadDir))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +65,6 @@ func main() {
 		log.Fatalf("listen and serve: %v", err)
 	}
 }
-
 
 func withCORS(frontendOrigin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

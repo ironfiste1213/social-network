@@ -56,6 +56,16 @@ func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (
 	return user, err
 }
 
+// IsFollowing returns true if followerID follows followingID.
+func (r *Repository) IsFollowing(ctx context.Context, followerID, followingID string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(1) FROM followers WHERE follower_id = ? AND following_id = ?`,
+		followerID, followingID,
+	).Scan(&count)
+	return count > 0, err
+}
+
 func (r *Repository) UpdateUser(ctx context.Context, id string, input UpdateInput) (User, error) {
 	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
 	args := []any{}
