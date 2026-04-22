@@ -106,3 +106,46 @@ func (r *Repository) UpdateUser(ctx context.Context, id string, input UpdateInpu
 
 	return r.GetUserByID(ctx, id)
 }
+
+func (r *Repository) SearchUsersByNickname(ctx context.Context, excludeUserID, query string, limit int) ([]SearchResult, error) {
+	normalizedQuery := strings.ToLower(query)
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, first_name, last_name, COALESCE(nickname, ''), COALESCE(avatar_path, ''), profile_visibility
+		FROM users
+		WHERE id != ?
+		  AND nickname IS NOT NULL
+		  AND TRIM(nickname) != ''
+		  AND LOWER(nickname) LIKE ?
+		ORDER BY
+		  CASE
+		    WHEN LOWER(nickname) = ? THEN 0
+		    WHEN LOWER(nickname) LIKE ? THEN 1
+		    ELSE 2
+		  END,
+		  LOWER(nickname) ASC
+		LIMIT ?;
+	`, excludeUserID, "%"+normalizedQuery+"%", normalizedQuery, normalizedQuery+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var user SearchResult
+		if err := rows.Scan(
+			&user.ID,
+			&user.FirstName,
+			&user.LastName,
+			&user.Nickname,
+			&user.AvatarPath,
+			&user.ProfileVisibility,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, user)
+	}
+
+	return results, rows.Err()
+}

@@ -4,15 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
- 
+
 var ErrNotFound = errors.New("not found")
 var ErrAlreadyFollowing = errors.New("already following")
 var ErrRequestAlreadyExists = errors.New("follow request already exists")
- 
 
 type Repository struct {
 	db *sql.DB
@@ -24,6 +24,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 // IsFollowing returns true if followerID follows followingID
 func (r *Repository) IsFollowing(ctx context.Context, followingID, followerID string) (bool, error) {
+	fmt.Println("[FOLLOWERS][REPO] IsFollowing follower:", followerID, "target:", followingID)
 	var count int
 	err := r.db.QueryRowContext(ctx,
 		`SELECT COUNT(1) FROM followers WHERE follower_id = ? AND following_id = ?`,
@@ -34,6 +35,7 @@ func (r *Repository) IsFollowing(ctx context.Context, followingID, followerID st
 
 // GetFollowRequestStatus returns the status of a pending request, or "" if none
 func (r *Repository) GetFollowRequestStatus(ctx context.Context, senderID, receiverID string) (string, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetFollowRequestStatus sender:", senderID, "receiver:", receiverID)
 	var status string
 	err := r.db.QueryRowContext(ctx,
 		`SELECT status FROM follow_requests WHERE sender_id = ? AND receiver_id = ?`,
@@ -47,6 +49,7 @@ func (r *Repository) GetFollowRequestStatus(ctx context.Context, senderID, recei
 
 // GetProfileVisibility returns the profile_visibility field for a user
 func (r *Repository) GetProfileVisibility(ctx context.Context, userID string) (string, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetProfileVisibility user:", userID)
 	var v string
 	err := r.db.QueryRowContext(ctx,
 		`SELECT profile_visibility FROM users WHERE id = ?`, userID,
@@ -59,6 +62,7 @@ func (r *Repository) GetProfileVisibility(ctx context.Context, userID string) (s
 
 // CreateFollowRequest inserts a pending follow request
 func (r *Repository) CreateFollowRequest(ctx context.Context, senderID, receiverID string) error {
+	fmt.Println("[FOLLOWERS][REPO] CreateFollowRequest sender:", senderID, "receiver:", receiverID)
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO follow_requests (id, sender_id, receiver_id, status) VALUES (?, ?, ?, 'pending')`,
 		uuid.NewString(), senderID, receiverID,
@@ -68,6 +72,7 @@ func (r *Repository) CreateFollowRequest(ctx context.Context, senderID, receiver
 
 // CreateFollower directly adds a follower relationship (for public profiles)
 func (r *Repository) CreateFollower(ctx context.Context, followerID, followingID string) error {
+	fmt.Println("[FOLLOWERS][REPO] CreateFollower follower:", followerID, "target:", followingID)
 	_, err := r.db.ExecContext(ctx,
 		`INSERT OR IGNORE INTO followers (follower_id, following_id) VALUES (?, ?)`,
 		followerID, followingID,
@@ -77,6 +82,7 @@ func (r *Repository) CreateFollower(ctx context.Context, followerID, followingID
 
 // AcceptFollowRequest accepts a pending follow request and creates the follower row
 func (r *Repository) AcceptFollowRequest(ctx context.Context, requestID, senderID, receiverID string) error {
+	fmt.Println("[FOLLOWERS][REPO] AcceptFollowRequest request:", requestID, "sender:", senderID, "receiver:", receiverID)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -102,9 +108,9 @@ func (r *Repository) AcceptFollowRequest(ctx context.Context, requestID, senderI
 	return tx.Commit()
 }
 
- 
 // DeclineFollowRequest declines a pending follow request
 func (r *Repository) DeclineFollowRequest(ctx context.Context, requestID, receiverID string) error {
+	fmt.Println("[FOLLOWERS][REPO] DeclineFollowRequest request:", requestID, "receiver:", receiverID)
 	now := time.Now().UTC()
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE follow_requests SET status = 'declined', responded_at = ? WHERE id = ? AND receiver_id = ?`,
@@ -112,10 +118,10 @@ func (r *Repository) DeclineFollowRequest(ctx context.Context, requestID, receiv
 	)
 	return err
 }
- 
- 
+
 // DeleteFollower removes a follower relationship (unfollow)
 func (r *Repository) DeleteFollower(ctx context.Context, followerID, followingID string) error {
+	fmt.Println("[FOLLOWERS][REPO] DeleteFollower follower:", followerID, "target:", followingID)
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM followers WHERE follower_id = ? AND following_id = ?`,
 		followerID, followingID,
@@ -125,15 +131,17 @@ func (r *Repository) DeleteFollower(ctx context.Context, followerID, followingID
 
 // DeleteFollowRequest removes a follow request (cancel or cleanup on unfollow)
 func (r *Repository) DeleteFollowRequest(ctx context.Context, senderID, receiverID string) error {
+	fmt.Println("[FOLLOWERS][REPO] DeleteFollowRequest sender:", senderID, "receiver:", receiverID)
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM follow_requests WHERE sender_id = ? AND receiver_id = ?`,
 		senderID, receiverID,
 	)
 	return err
 }
- 
+
 // GetFollowers returns users who follow targetID
 func (r *Repository) GetFollowers(ctx context.Context, targetID string) ([]UserSummary, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetFollowers target:", targetID)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.id, u.first_name, u.last_name,
 		       COALESCE(u.nickname, ''), COALESCE(u.avatar_path, '')
@@ -148,8 +156,7 @@ func (r *Repository) GetFollowers(ctx context.Context, targetID string) ([]UserS
 	defer rows.Close()
 	return scanUserSummaries(rows)
 }
- 
- 
+
 func scanUserSummaries(rows *sql.Rows) ([]UserSummary, error) {
 	var result []UserSummary
 	for rows.Next() {
@@ -162,9 +169,9 @@ func scanUserSummaries(rows *sql.Rows) ([]UserSummary, error) {
 	return result, rows.Err()
 }
 
- 
 // GetFollowing returns users that targetID follows
 func (r *Repository) GetFollowing(ctx context.Context, targetID string) ([]UserSummary, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetFollowing target:", targetID)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.id, u.first_name, u.last_name,
 		       COALESCE(u.nickname, ''), COALESCE(u.avatar_path, '')
@@ -179,10 +186,10 @@ func (r *Repository) GetFollowing(ctx context.Context, targetID string) ([]UserS
 	defer rows.Close()
 	return scanUserSummaries(rows)
 }
- 
- 
+
 // GetPendingRequests returns incoming pending follow requests for receiverID
 func (r *Repository) GetPendingRequests(ctx context.Context, receiverID string) ([]FollowRequest, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetPendingRequests receiver:", receiverID)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT fr.id, u.id, u.first_name, u.last_name,
 		       COALESCE(u.nickname, ''), COALESCE(u.avatar_path, ''),
@@ -196,7 +203,7 @@ func (r *Repository) GetPendingRequests(ctx context.Context, receiverID string) 
 		return nil, err
 	}
 	defer rows.Close()
- 
+
 	var result []FollowRequest
 	for rows.Next() {
 		var req FollowRequest
@@ -213,16 +220,17 @@ func (r *Repository) GetPendingRequests(ctx context.Context, receiverID string) 
 	return result, rows.Err()
 }
 
-
-
-func (r * Repository) GetuserID(ctx context.Context, sessionID string) (string, error) {
+func (r *Repository) GetuserID(ctx context.Context, sessionID string) (string, error) {
+	fmt.Println("[FOLLOWERS][REPO] GetuserID session:", sessionID)
 	var userId string
-	 err := r.db.QueryRowContext(ctx,
-        `SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`,
-        sessionID,
-    ).Scan(&userId)
-    if err != nil {
-        return "", errors.New("invalid session")
-    }
+	err := r.db.QueryRowContext(ctx,
+		`SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`,
+		sessionID,
+	).Scan(&userId)
+	if err != nil {
+		fmt.Println("[FOLLOWERS][REPO] GetuserID failed:", err)
+		return "", errors.New("invalid session")
+	}
+	fmt.Println("[FOLLOWERS][REPO] GetuserID success user:", userId)
 	return userId, err
 }

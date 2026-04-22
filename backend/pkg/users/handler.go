@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,8 +25,8 @@ type FollowRouteHandler interface {
 }
 
 type Handler struct {
-	service         *Service
-	uploadDir       string
+	service          *Service
+	uploadDir        string
 	followersHandler FollowRouteHandler
 }
 
@@ -46,6 +47,7 @@ func (h *Handler) SetFollowersHandler(fh FollowRouteHandler) {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/users/me", h.handleMe)
 	mux.HandleFunc("/users/me/avatar", h.handleAvatar)
+	mux.HandleFunc("/users/search", h.handleSearchUsers)
 	mux.HandleFunc("/users/", h.handleUserByID)
 }
 
@@ -135,6 +137,45 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": updated, "avatar_path": avatarPath})
+}
+
+func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	user, err := h.authenticate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	limit := 0
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = parsedLimit
+	}
+
+	results, err := h.service.SearchUsers(r.Context(), user.ID, r.URL.Query().Get("q"), limit)
+	if err != nil {
+		if errors.Is(err, ErrInvalidSearchQuery) {
+			writeError(w, http.StatusBadRequest, "search query must be at least 2 characters")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to search users")
+		return
+	}
+
+	if results == nil {
+		results = []SearchResult{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"users": results})
 }
 
 // GET /users/{id}               — public profile
@@ -243,4 +284,13 @@ type User struct {
 	ProfileVisibility string    `json:"profile_visibility"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type SearchResult struct {
+	ID                string `json:"id"`
+	FirstName         string `json:"first_name"`
+	LastName          string `json:"last_name"`
+	Nickname          string `json:"nickname"`
+	AvatarPath        string `json:"avatar_path,omitempty"`
+	ProfileVisibility string `json:"profile_visibility"`
 }

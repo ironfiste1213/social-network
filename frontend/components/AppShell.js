@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
+import UserSearchBox from './UserSearchBox';
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
@@ -38,7 +39,9 @@ export default function AppShell({ children }) {
           Socialite
         </Link>
 
-        <div style={{ flex: 1 }} />
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 20px' }}>
+          {user && <UserSearchBox />}
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <NavLink href="/feed">Feed</NavLink>

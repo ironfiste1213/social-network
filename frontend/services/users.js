@@ -43,3 +43,7 @@ export async function uploadAvatar(file) {
 
 // GET /users/:id
 export const getUserById = (id) => apiRequest(`/users/${id}`);
+
+// GET /users/search?q=:query&limit=:limit
+export const searchUsers = (query, limit = 8) =>
+  apiRequest(`/users/search?q=${encodeURIComponent(query)}&limit=${limit}`);
