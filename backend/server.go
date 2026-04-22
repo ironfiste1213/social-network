@@ -4,16 +4,18 @@ import (
 	"log"
 	"net/http"
 	"os"
-	//"os/user"
-	"social-network/backend/pkg/users"
+
 	"social-network/backend/pkg/auth"
 	"social-network/backend/pkg/db/sqlite"
+	"social-network/backend/pkg/followers"
+	"social-network/backend/pkg/users"
 )
 
 func main() {
 	dbPath := getenv("SQLITE_PATH", "./social-network.db")
 	addr := getenv("APP_ADDR", ":8080")
 	frontendOrigin := getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+	uploadDir := getenv("UPLOAD_DIR", "./uploads")
 
 	db, err := sqlite.New(dbPath)
 	if err != nil {
@@ -26,17 +28,33 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+
+	// Auth handler
 	authHandler := auth.NewHandler(db)
 	authHandler.RegisterRoutes(mux)
-	usersHnadler := users.NewHandler(db, "")
-	usersHnadler.RegisterRoutes(mux)
+
+	
+	
+
+	// Users handler
+	usersHandler := users.NewHandler(db, uploadDir)
+	usersHandler.RegisterRoutes(mux)
+
+	// Followers handler — shares getUserID
+	followersHandler := followers.NewHandler(db)
+	followersHandler.RegisterRoutes(mux)
+
+	// Expose followers sub-routes under /users/{id}/ via the users handler
+	usersHandler.SetFollowersHandler(followersHandler)
+
+	// Serve uploaded files
+	mux.Handle("/uploads/", users.ServeUploads(uploadDir))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
@@ -47,12 +65,13 @@ func main() {
 	}
 }
 
+
 func withCORS(frontendOrigin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", frontendOrigin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -67,6 +86,5 @@ func getenv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
-
 	return fallback
 }

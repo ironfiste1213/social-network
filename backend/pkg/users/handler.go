@@ -18,9 +18,15 @@ import (
 const sessionCookieName = "session_id"
 const maxAvatarSize = 5 << 20 // 5MB
 
+// FollowRouteHandler is implemented by the followers.Handler
+type FollowRouteHandler interface {
+	HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request, targetID, sub string) bool
+}
+
 type Handler struct {
-	service *Service
-	uploadDir string
+	service         *Service
+	uploadDir       string
+	followersHandler FollowRouteHandler
 }
 
 func NewHandler(db *sql.DB, uploadDir string) *Handler {
@@ -32,21 +38,25 @@ func NewHandler(db *sql.DB, uploadDir string) *Handler {
 	return &Handler{service: service, uploadDir: uploadDir}
 }
 
+// SetFollowersHandler wires in the followers handler for /users/{id}/followers etc.
+func (h *Handler) SetFollowersHandler(fh FollowRouteHandler) {
+	h.followersHandler = fh
+}
+
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/users/me", h.handleMe)
 	mux.HandleFunc("/users/me/avatar", h.handleAvatar)
 	mux.HandleFunc("/users/", h.handleUserByID)
 }
 
-// GET /users/me — returns own profile
-// PATCH /users/me — updates own profile
+// GET /users/me  — own profile
+// PATCH /users/me — update own profile
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, err := h.authenticate(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]any{"user": user})
@@ -63,23 +73,20 @@ func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID 
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-
 	updated, err := h.service.UpdateProfile(r.Context(), userID, input)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update profile")
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{"user": updated})
 }
 
-// POST /users/me/avatar — upload avatar image
+// POST /users/me/avatar
 func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
 	user, err := h.authenticate(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
@@ -99,7 +106,6 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Validate content type
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
 	if !allowed[ext] {
@@ -107,7 +113,6 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save file
 	filename := uuid.NewString() + ext
 	dest := filepath.Join(h.uploadDir, filename)
 	out, err := os.Create(dest)
@@ -129,28 +134,40 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update avatar")
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{"user": updated, "avatar_path": avatarPath})
 }
 
-// GET /users/:id — get any user's profile
+// GET /users/{id}               — public profile
+// GET /users/{id}/followers     — follower list
+// GET /users/{id}/following     — following list
+// GET /users/{id}/follow-status — viewer → target relationship
 func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/users/")
+	parts := strings.SplitN(path, "/", 2)
+
+	targetID := parts[0]
+	if targetID == "" || targetID == "me" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Sub-routes delegated to followers handler
+	if len(parts) == 2 && h.followersHandler != nil {
+		sub := parts[1]
+		if h.followersHandler.HandleUserFollowRoutes(w, r, targetID, sub) {
+			return
+		}
+	}
+
+	// Main profile route
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	// Extract ID from path: /users/{id}
-	id := strings.TrimPrefix(r.URL.Path, "/users/")
-	if id == "" || strings.Contains(id, "/") {
-		writeError(w, http.StatusBadRequest, "invalid user id")
-		return
-	}
-
-	// Try to get the requesting user (optional auth)
 	requester, _ := h.authenticate(r)
 
-	profile, err := h.service.GetUserByID(r.Context(), id)
+	profile, err := h.service.GetUserByID(r.Context(), targetID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
@@ -160,11 +177,9 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If profile is private and requester is not the owner, check if they follow
 	if profile.ProfileVisibility == "private" {
 		isOwner := requester != nil && requester.ID == profile.ID
 		if !isOwner {
-			// For now return limited info — follower check comes in Day 5
 			writeJSON(w, http.StatusOK, map[string]any{
 				"user": map[string]any{
 					"id":                 profile.ID,
@@ -203,12 +218,12 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// Serve uploaded files
+// ServeUploads returns a handler that serves files from uploadDir under /uploads/
 func ServeUploads(uploadDir string) http.Handler {
 	return http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir)))
 }
 
-// Types used only in handler
+// Types used in handler
 type UpdateInput struct {
 	Nickname          *string `json:"nickname"`
 	AboutMe           *string `json:"about_me"`

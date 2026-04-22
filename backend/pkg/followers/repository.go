@@ -212,3 +212,17 @@ func (r *Repository) GetPendingRequests(ctx context.Context, receiverID string) 
 	}
 	return result, rows.Err()
 }
+
+
+
+func (r * Repository) GetuserID(ctx context.Context, sessionID string) (string, error) {
+	var userId string
+	 err := r.db.QueryRowContext(ctx,
+        `SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`,
+        sessionID,
+    ).Scan(&userId)
+    if err != nil {
+        return "", errors.New("invalid session")
+    }
+	return userId, err
+}

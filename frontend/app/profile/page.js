@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import AuthGuard from '../../components/AuthGuard';
 import AppShell from '../../components/AppShell';
+import FollowRequestsPanel from '../../components/FollowRequestsPanel';
+import FollowersModal from '../../components/FollowersModal';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile, uploadAvatar } from '../../services/users';
+import { getFollowers, getFollowing } from '../../services/followers';
 
 export default function ProfilePage() {
   return (
@@ -17,31 +20,37 @@ export default function ProfilePage() {
 }
 
 function ProfileContent() {
-  const { user, login } = useAuth();
-  const [editing, setEditing]     = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState('');
-  const [success, setSuccess]     = useState('');
+  const { user } = useAuth();
+  const [editing, setEditing]         = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState('');
+  const [success, setSuccess]         = useState('');
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [avatarFile, setAvatarFile]       = useState(null);
+  const [modal, setModal]             = useState(null); // 'followers' | 'following' | null
+  const [counts, setCounts]           = useState({ followers: 0, following: 0 });
   const fileRef = useRef(null);
 
   const [form, setForm] = useState({
-    nickname:           '',
-    about_me:           '',
-    profile_visibility: 'public',
+    nickname: '', about_me: '', profile_visibility: 'public',
   });
 
-  // Sync form with current user data when entering edit mode
   useEffect(() => {
     if (user) {
       setForm({
-        nickname:           user.nickname   || '',
-        about_me:           user.about_me   || '',
+        nickname: user.nickname || '',
+        about_me: user.about_me || '',
         profile_visibility: user.profile_visibility || 'public',
       });
+      // Load counts
+      Promise.all([getFollowers(user.id), getFollowing(user.id)])
+        .then(([frs, fing]) => setCounts({
+          followers: frs.followers?.length ?? 0,
+          following: fing.following?.length ?? 0,
+        }))
+        .catch(() => {});
     }
-  }, [user, editing]);
+  }, [user]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -53,25 +62,18 @@ function ProfileContent() {
   };
 
   const handleSave = async () => {
-    setSaving(true);
-    setError('');
-    setSuccess('');
+    setSaving(true); setError(''); setSuccess('');
     try {
-      // Upload avatar first if changed
-      if (avatarFile) {
-        await uploadAvatar(avatarFile);
-      }
-      // Update profile fields
+      if (avatarFile) await uploadAvatar(avatarFile);
       await updateProfile({
-        nickname:           form.nickname   || null,
-        about_me:           form.about_me   || null,
+        nickname: form.nickname || null,
+        about_me: form.about_me || null,
         profile_visibility: form.profile_visibility,
       });
       setSuccess('Profile updated.');
       setEditing(false);
       setAvatarFile(null);
       setAvatarPreview(null);
-      // Refresh user in context
       window.location.reload();
     } catch (e) {
       setError(e.message);
@@ -94,6 +96,9 @@ function ProfileContent() {
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '48px 24px' }}>
 
+      {/* Follow requests — only shown if there are pending ones */}
+      <FollowRequestsPanel />
+
       {/* Header card */}
       <div style={{
         background: 'var(--bg-surface)',
@@ -103,9 +108,8 @@ function ProfileContent() {
         marginBottom: 24,
         position: 'relative',
       }}>
-
-        {/* Avatar */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, marginBottom: 24 }}>
+          {/* Avatar */}
           <div
             onClick={() => editing && fileRef.current?.click()}
             style={{
@@ -114,10 +118,8 @@ function ProfileContent() {
               border: `2px solid ${editing ? 'var(--accent)' : 'var(--border)'}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 24, color: 'var(--accent)', fontWeight: 500,
-              flexShrink: 0,
-              cursor: editing ? 'pointer' : 'default',
-              overflow: 'hidden',
-              transition: 'border-color var(--transition)',
+              flexShrink: 0, cursor: editing ? 'pointer' : 'default',
+              overflow: 'hidden', transition: 'border-color var(--transition)',
               position: 'relative',
             }}
           >
@@ -131,9 +133,7 @@ function ProfileContent() {
                 background: 'rgba(0,0,0,0.45)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, color: '#fff', letterSpacing: '0.05em',
-              }}>
-                CHANGE
-              </div>
+              }}>CHANGE</div>
             )}
           </div>
           <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.gif" style={{ display: 'none' }} onChange={handleAvatarChange} />
@@ -152,21 +152,14 @@ function ProfileContent() {
             <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Joined {joined}</p>
           </div>
 
-          {/* Edit / Save buttons */}
           <div style={{ display: 'flex', gap: 8 }}>
             {editing ? (
               <>
-                <button onClick={() => { setEditing(false); setAvatarPreview(null); setAvatarFile(null); setError(''); }} style={btnSecondary}>
-                  Cancel
-                </button>
-                <button onClick={handleSave} disabled={saving} style={btnPrimary}>
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
+                <button onClick={() => { setEditing(false); setAvatarPreview(null); setAvatarFile(null); setError(''); }} style={btnSecondary}>Cancel</button>
+                <button onClick={handleSave} disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button>
               </>
             ) : (
-              <button onClick={() => setEditing(true)} style={btnSecondary}>
-                Edit profile
-              </button>
+              <button onClick={() => setEditing(true)} style={btnSecondary}>Edit profile</button>
             )}
           </div>
         </div>
@@ -174,38 +167,19 @@ function ProfileContent() {
         {error   && <div style={errorBox}>{error}</div>}
         {success && <div style={successBox}>{success}</div>}
 
-        {/* About / edit form */}
         {editing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Field label="Nickname">
-              <input
-                value={form.nickname}
-                onChange={set('nickname')}
-                placeholder="How friends call you"
-                style={inputStyle}
-              />
+              <input value={form.nickname} onChange={set('nickname')} placeholder="How friends call you" style={inputStyle} />
             </Field>
             <Field label="About me">
-              <textarea
-                value={form.about_me}
-                onChange={set('about_me')}
-                placeholder="A short bio…"
-                rows={4}
-                style={{ ...inputStyle, resize: 'vertical' }}
-              />
+              <textarea value={form.about_me} onChange={set('about_me')} placeholder="A short bio…" rows={4} style={{ ...inputStyle, resize: 'vertical' }} />
             </Field>
             <Field label="Profile visibility">
               <div style={{ display: 'flex', gap: 12 }}>
                 {['public', 'private'].map(v => (
                   <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: 'var(--text-primary)' }}>
-                    <input
-                      type="radio"
-                      name="visibility"
-                      value={v}
-                      checked={form.profile_visibility === v}
-                      onChange={set('profile_visibility')}
-                      style={{ accentColor: 'var(--accent)' }}
-                    />
+                    <input type="radio" name="visibility" value={v} checked={form.profile_visibility === v} onChange={set('profile_visibility')} style={{ accentColor: 'var(--accent)' }} />
                     {v.charAt(0).toUpperCase() + v.slice(1)}
                   </label>
                 ))}
@@ -221,14 +195,24 @@ function ProfileContent() {
             )}
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
               <Stat label="Posts" value="0" />
-              <Stat label="Followers" value="0" />
-              <Stat label="Following" value="0" />
+              <Stat
+                label="Followers"
+                value={counts.followers}
+                onClick={() => setModal('followers')}
+                clickable
+              />
+              <Stat
+                label="Following"
+                value={counts.following}
+                onClick={() => setModal('following')}
+                clickable
+              />
             </div>
           </>
         )}
       </div>
 
-      {/* Info card */}
+      {/* Account info */}
       <div style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
@@ -239,17 +223,24 @@ function ProfileContent() {
           Account info
         </h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 32px' }}>
-          <InfoRow label="Email"       value={user.email} />
+          <InfoRow label="Email"        value={user.email} />
           <InfoRow label="Date of birth" value={dob} />
-          <InfoRow label="Visibility"  value={user.profile_visibility} />
+          <InfoRow label="Visibility"   value={user.profile_visibility} />
           <InfoRow label="Member since" value={joined} />
         </div>
       </div>
+
+      {/* Followers/Following modal */}
+      {modal && (
+        <FollowersModal
+          userId={user.id}
+          mode={modal}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }
-
-/* ── Sub-components ── */
 
 function Field({ label, children }) {
   return (
@@ -262,10 +253,20 @@ function Field({ label, children }) {
   );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, onClick, clickable }) {
   return (
-    <div>
-      <div style={{ fontSize: 20, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{value}</div>
+    <div
+      onClick={onClick}
+      style={{ cursor: clickable ? 'pointer' : 'default' }}
+    >
+      <div style={{
+        fontSize: 20,
+        fontFamily: 'var(--font-display)',
+        color: clickable ? 'var(--accent)' : 'var(--text-primary)',
+        transition: 'opacity var(--transition)',
+      }}>
+        {value}
+      </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
     </div>
   );
@@ -280,60 +281,29 @@ function InfoRow({ label, value }) {
   );
 }
 
-/* ── Shared styles ── */
-
 const inputStyle = {
-  background: 'var(--bg-input)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '10px 14px',
-  color: 'var(--text-primary)',
-  fontSize: 14,
-  fontFamily: 'var(--font-body)',
-  outline: 'none',
-  width: '100%',
-  transition: 'border-color var(--transition)',
+  background: 'var(--bg-input)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)', padding: '10px 14px',
+  color: 'var(--text-primary)', fontSize: 14, fontFamily: 'var(--font-body)',
+  outline: 'none', width: '100%', transition: 'border-color var(--transition)',
 };
-
 const btnPrimary = {
-  background: 'var(--accent)',
-  color: '#0d0d0d',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  padding: '8px 18px',
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'var(--font-body)',
+  background: 'var(--accent)', color: '#0d0d0d', border: 'none',
+  borderRadius: 'var(--radius-sm)', padding: '8px 18px',
+  fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
-
 const btnSecondary = {
-  background: 'none',
-  color: 'var(--text-secondary)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '8px 18px',
-  fontSize: 13,
-  cursor: 'pointer',
-  fontFamily: 'var(--font-body)',
+  background: 'none', color: 'var(--text-secondary)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)', padding: '8px 18px',
+  fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
-
 const errorBox = {
-  background: 'rgba(192,87,74,0.1)',
-  border: '1px solid rgba(192,87,74,0.3)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '10px 14px',
-  fontSize: 13,
-  color: '#e87060',
-  marginBottom: 16,
+  background: 'rgba(192,87,74,0.1)', border: '1px solid rgba(192,87,74,0.3)',
+  borderRadius: 'var(--radius-sm)', padding: '10px 14px',
+  fontSize: 13, color: '#e87060', marginBottom: 16,
 };
-
 const successBox = {
-  background: 'rgba(90,158,111,0.1)',
-  border: '1px solid rgba(90,158,111,0.3)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '10px 14px',
-  fontSize: 13,
-  color: '#5a9e6f',
-  marginBottom: 16,
+  background: 'rgba(90,158,111,0.1)', border: '1px solid rgba(90,158,111,0.3)',
+  borderRadius: 'var(--radius-sm)', padding: '10px 14px',
+  fontSize: 13, color: '#5a9e6f', marginBottom: 16,
 };

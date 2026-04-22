@@ -10,13 +10,15 @@ import (
 
 type Handler struct {
 	service   *Service
-	getUserID func(r *http.Request) (string, error)
+	
 }
+var ErrUserNotFound = errors.New("user not found")
 
-func NewHandler(db *sql.DB, getUserID func(r *http.Request) (string, error)) *Handler {
+const sessionCookieName = "session_id"
+func NewHandler(db *sql.DB) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
-	return &Handler{service: service, getUserID: getUserID}
+	return &Handler{service: service}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -40,12 +42,8 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID 
 		writeError(w, http.StatusBadRequest, "missing target user id")
 		return
 	}
-	viewerID, err := h.getUserID(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return
-	}
-
+	viewerID := h.getUserID(r, w)
+	
 	switch r.Method {
 	case http.MethodPost:
 		err := h.service.Follow(r.Context(), viewerID, targetID)
@@ -82,11 +80,8 @@ func (h *Handler) handleListRequests(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	viewerID, err := h.getUserID(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return
-	}
+	viewerID := h.getUserID(r, w)
+	
 	reqs, err := h.service.GetPendingRequests(r.Context(), viewerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get requests")
@@ -104,11 +99,8 @@ func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	viewerID, err := h.getUserID(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return
-	}
+	viewerID := h.getUserID(r, w)
+	
 	path := strings.TrimPrefix(r.URL.Path, "/follow/requests/")
 	parts := strings.Split(path, "/")
 	if len(parts) != 2 {
@@ -174,11 +166,8 @@ func (h *Handler) HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request,
 		return true
 
 	case "follow-status":
-		viewerID, err := h.getUserID(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "not authenticated")
-			return true
-		}
+		viewerID := h.getUserID(r, w)
+		if viewerID == "" {return true}
 		status, err := h.service.GetFollowStatus(r.Context(), viewerID, targetID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed")
@@ -198,4 +187,23 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+
+func (h *Handler) getUserID(r *http.Request, w http.ResponseWriter) (string) {
+cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return ""
+	}
+	viewerID, err := h.service.currentUserID(r.Context(), cookie.Value)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "not authenticated")
+			return ""
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get current user")
+		return ""
+	}
+	return viewerID
 }

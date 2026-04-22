@@ -6,7 +6,7 @@ import (
 )
 
 var ErrCannotFollowSelf = errors.New("cannot follow yourself")
-
+ var ErrInvalidCredentials = errors.New("invalid credentials")
 type Service struct {
 	repo *Repository
 }
@@ -130,4 +130,15 @@ func (s *Service) GetFollowStatus(ctx context.Context, viewerID, targetID string
 	}
 
 	return fs, nil
+}
+
+
+
+func (s *Service) currentUserID(ctx context.Context, sessionID string) (string, error) {
+    if sessionID == "" {
+		return "", ErrInvalidCredentials
+	}
+   
+   
+    return s.repo.GetuserID(ctx, sessionID)
 }
