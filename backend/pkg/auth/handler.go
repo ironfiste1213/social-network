@@ -138,6 +138,10 @@ func (h *Handler) handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
+	case errors.Is(err, ErrEmailAlreadyExists):
+		writeError(w, http.StatusConflict, "email already exists")
+	case errors.Is(err, ErrNicknameAlreadyExists):
+		writeError(w, http.StatusConflict, "nickname already exists")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}

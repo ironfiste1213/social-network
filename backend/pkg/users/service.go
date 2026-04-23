@@ -7,6 +7,7 @@ import (
 )
 
 var ErrInvalidSearchQuery = errors.New("invalid search query")
+var ErrNicknameAlreadyExists = errors.New("nickname already exists")
 
 const (
 	defaultSearchLimit = 8
@@ -31,6 +32,21 @@ func (s *Service) GetUserBySession(ctx context.Context, sessionID string) (User,
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, userID string, input UpdateInput) (User, error) {
+	if input.Nickname != nil {
+		trimmedNickname := strings.TrimSpace(*input.Nickname)
+		input.Nickname = &trimmedNickname
+
+		if trimmedNickname != "" {
+			exists, err := s.repo.NicknameExistsForOtherUsers(ctx, userID, trimmedNickname)
+			if err != nil {
+				return User{}, err
+			}
+			if exists {
+				return User{}, ErrNicknameAlreadyExists
+			}
+		}
+	}
+
 	return s.repo.UpdateUser(ctx, userID, input)
 }
 

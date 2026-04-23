@@ -14,8 +14,10 @@ import (
 const SessionDuration = 7 * 24 * time.Hour
 
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrInvalidInput       = errors.New("invalid input")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrInvalidInput          = errors.New("invalid input")
+	ErrEmailAlreadyExists    = errors.New("email already exists")
+	ErrNicknameAlreadyExists = errors.New("nickname already exists")
 )
 
 type Service struct {
@@ -54,6 +56,24 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (User, Sess
 		Nickname:          strings.TrimSpace(input.Nickname),
 		AboutMe:           strings.TrimSpace(input.AboutMe),
 		ProfileVisibility: "public",
+	}
+
+	emailExists, err := s.repo.EmailExists(ctx, user.Email)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	if emailExists {
+		return User{}, Session{}, ErrEmailAlreadyExists
+	}
+
+	if user.Nickname != "" {
+		nicknameExists, err := s.repo.NicknameExists(ctx, user.Nickname)
+		if err != nil {
+			return User{}, Session{}, err
+		}
+		if nicknameExists {
+			return User{}, Session{}, ErrNicknameAlreadyExists
+		}
 	}
 
 	fmt.Println("[SERVICE] Register calling CreateUser")

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -39,10 +40,11 @@ func (r *Repository) CreateUser(ctx context.Context, user User) error {
 	)
 	if err != nil {
 		fmt.Println("[REPO] CreateUser failed")
+		return mapUniquenessError(err)
 	} else {
 		fmt.Println("[REPO] CreateUser success")
 	}
-	return err
+	return nil
 }
 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -79,6 +81,32 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (User, er
 		fmt.Println("[REPO] GetUserByEmail success")
 	}
 	return user, err
+}
+
+func (r *Repository) EmailExists(ctx context.Context, email string) (bool, error) {
+	var exists int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE LOWER(email) = LOWER(?)
+		);
+	`, email).Scan(&exists)
+	return exists == 1, err
+}
+
+func (r *Repository) NicknameExists(ctx context.Context, nickname string) (bool, error) {
+	var exists int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE nickname IS NOT NULL
+			  AND TRIM(nickname) != ''
+			  AND LOWER(nickname) = LOWER(?)
+		);
+	`, nickname).Scan(&exists)
+	return exists == 1, err
 }
 
 func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (User, error) {
@@ -137,9 +165,24 @@ func (r *Repository) DeleteExpiredSessions(ctx context.Context, now time.Time) e
 }
 
 func nullIfEmpty(value string) any {
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return nil
 	}
 
-	return value
+	return strings.TrimSpace(value)
+}
+
+func mapUniquenessError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	switch {
+	case strings.Contains(err.Error(), "UNIQUE constraint failed: users.email"):
+		return ErrEmailAlreadyExists
+	case strings.Contains(err.Error(), "UNIQUE constraint failed: users.nickname"):
+		return ErrNicknameAlreadyExists
+	default:
+		return err
+	}
 }

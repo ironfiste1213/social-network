@@ -111,10 +111,25 @@ func (r *Repository) UpdateUser(ctx context.Context, id string, input UpdateInpu
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?;", strings.Join(setClauses, ", "))
 	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
-		return User{}, err
+		return User{}, mapUniquenessError(err)
 	}
 
 	return r.GetUserByID(ctx, id)
+}
+
+func (r *Repository) NicknameExistsForOtherUsers(ctx context.Context, userID, nickname string) (bool, error) {
+	var exists int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE id != ?
+			  AND nickname IS NOT NULL
+			  AND TRIM(nickname) != ''
+			  AND LOWER(nickname) = LOWER(?)
+		);
+	`, userID, nickname).Scan(&exists)
+	return exists == 1, err
 }
 
 func (r *Repository) SearchUsersByNickname(ctx context.Context, excludeUserID, query string, limit int) ([]SearchResult, error) {
@@ -158,4 +173,16 @@ func (r *Repository) SearchUsersByNickname(ctx context.Context, excludeUserID, q
 	}
 
 	return results, rows.Err()
+}
+
+func mapUniquenessError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if strings.Contains(err.Error(), "UNIQUE constraint failed: users.nickname") {
+		return ErrNicknameAlreadyExists
+	}
+
+	return err
 }

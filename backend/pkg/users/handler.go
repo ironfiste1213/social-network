@@ -77,6 +77,10 @@ func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID 
 	}
 	updated, err := h.service.UpdateProfile(r.Context(), userID, input)
 	if err != nil {
+		if errors.Is(err, ErrNicknameAlreadyExists) {
+			writeError(w, http.StatusConflict, "nickname already exists")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to update profile")
 		return
 	}
