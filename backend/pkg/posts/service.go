@@ -27,6 +27,15 @@ func (s *Service) CreatePost(ctx context.Context, authorID string, input CreateP
 	if input.Privacy == "selected_followers" && len(input.ViewerIDs) == 0 {
 		return Post{}, ErrInvalidInput
 	}
+	if input.GroupID != "" {
+		isMember, err := s.repo.IsGroupMember(ctx, input.GroupID, authorID)
+		if err != nil {
+			return Post{}, err
+		}
+		if !isMember {
+			return Post{}, ErrForbidden
+		}
+	}
 	return s.repo.CreatePost(ctx, authorID, input)
 }
 

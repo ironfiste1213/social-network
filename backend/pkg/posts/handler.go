@@ -110,6 +110,10 @@ func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid input: body required; selected_followers requires viewer_ids")
 			return
 		}
+		if errors.Is(err, ErrForbidden) {
+			writeError(w, http.StatusForbidden, "you must be a group member to post in this group")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to create post")
 		return
 	}

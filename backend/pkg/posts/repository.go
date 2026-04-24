@@ -189,6 +189,16 @@ func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (
 	return userID, err
 }
 
+func (r *Repository) IsGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM group_members
+		WHERE group_id = ? AND user_id = ?;
+	`, groupID, userID).Scan(&count)
+	return count > 0, err
+}
+
 // GetFollowersOfUser returns the list of user IDs that follow the given user (for selected_followers picker)
 func (r *Repository) GetFollowersOfUser(ctx context.Context, userID string) ([]FollowerSummary, error) {
 	rows, err := r.db.QueryContext(ctx, `

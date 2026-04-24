@@ -9,6 +9,7 @@ import (
 	"social-network/backend/pkg/comments"
 	"social-network/backend/pkg/db/sqlite"
 	"social-network/backend/pkg/followers"
+	"social-network/backend/pkg/groups"
 	"social-network/backend/pkg/posts"
 	"social-network/backend/pkg/users"
 )
@@ -53,6 +54,10 @@ func main() {
 	// Comments
 	commentsHandler := comments.NewHandler(db, uploadDir)
 	postsHandler.SetCommentsHandler(commentsHandler)
+
+	// Groups
+	groupsHandler := groups.NewHandler(db)
+	groupsHandler.RegisterRoutes(mux)
 
 	// Static uploads
 	mux.Handle("/uploads/", users.ServeUploads(uploadDir))

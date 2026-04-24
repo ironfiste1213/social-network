@@ -126,14 +126,25 @@ func (r *Repository) UpdateImagePath(ctx context.Context, commentID, authorID, i
 func (r *Repository) CanViewPost(ctx context.Context, postID, viewerID string) (bool, error) {
 	var privacy string
 	var authorID string
+	var groupID sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT author_id, privacy FROM posts WHERE id = ?;`, postID,
-	).Scan(&authorID, &privacy)
+		`SELECT author_id, privacy, group_id FROM posts WHERE id = ?;`, postID,
+	).Scan(&authorID, &privacy, &groupID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
+	}
+
+	if groupID.Valid && groupID.String != "" {
+		var count int
+		err := r.db.QueryRowContext(ctx, `
+			SELECT COUNT(1)
+			FROM group_members
+			WHERE group_id = ? AND user_id = ?;
+		`, groupID.String, viewerID).Scan(&count)
+		return count > 0, err
 	}
 
 	// Owner can always view
