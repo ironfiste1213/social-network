@@ -44,6 +44,13 @@ func (s *Service) GetUserPosts(ctx context.Context, authorID, viewerID string, l
 	return s.repo.GetUserPosts(ctx, authorID, viewerID, limit, offset)
 }
 
+func (s *Service) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit, offset int) ([]Post, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	return s.repo.GetGroupPosts(ctx, groupID, viewerID, limit, offset)
+}
+
 func (s *Service) DeletePost(ctx context.Context, postID, requesterID string) error {
 	return s.repo.DeletePost(ctx, postID, requesterID)
 }

@@ -31,7 +31,7 @@ func NewHandler(db *sql.DB, uploadDir string) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/posts", h.handlePosts)
 	mux.HandleFunc("/posts/", h.handlePostByID)
-	mux.HandleFunc("/users/", h.handleUserPosts) // only intercepts /users/{id}/posts
+	mux.HandleFunc("/user/", h.handleUserPosts) // only intercepts /users/{id}/posts
 }
 
 // POST /posts         — create

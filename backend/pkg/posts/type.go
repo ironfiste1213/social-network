@@ -5,6 +5,7 @@ import "time"
 type Post struct {
 	ID        string    `json:"id"`
 	AuthorID  string    `json:"author_id"`
+	GroupID   string    `json:"group_id,omitempty"`
 	Author    *Author   `json:"author,omitempty"`
 	Body      string    `json:"body"`
 	ImagePath string    `json:"image_path,omitempty"`
@@ -25,6 +26,7 @@ type Author struct {
 type CreatePostInput struct {
 	Body      string   `json:"body"`
 	Privacy   string   `json:"privacy"`
+	GroupID   string   `json:"group_id,omitempty"`
 	ImagePath string   `json:"image_path,omitempty"`
 	ViewerIDs []string `json:"viewer_ids,omitempty"`
 }

@@ -28,9 +28,9 @@ func (r *Repository) CreatePost(ctx context.Context, authorID string, input Crea
 	}
 
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO posts (id, author_id, body, image_path, privacy)
-		VALUES (?, ?, ?, ?, ?);
-	`, id, authorID, strings.TrimSpace(input.Body), nullIfEmpty(input.ImagePath), privacy)
+		INSERT INTO posts (id, author_id, group_id, body, image_path, privacy)
+		VALUES (?, ?, ?, ?, ?, ?);
+	`, id, authorID, nullIfEmpty(input.GroupID), strings.TrimSpace(input.Body), nullIfEmpty(input.ImagePath), privacy)
 	if err != nil {
 		return Post{}, fmt.Errorf("create post: %w", err)
 	}
@@ -52,15 +52,16 @@ func (r *Repository) CreatePost(ctx context.Context, authorID string, input Crea
 
 func (r *Repository) GetPostByID(ctx context.Context, id string) (Post, error) {
 	var p Post
+	var groupID sql.NullString
 	var imagePath sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT p.id, p.author_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
+		SELECT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
 		JOIN users u ON u.id = p.author_id
 		WHERE p.id = ?;
 	`, id).Scan(
-		&p.ID, &p.AuthorID, &p.Body, &imagePath, &p.Privacy, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.AuthorID, &groupID, &p.Body, &imagePath, &p.Privacy, &p.CreatedAt, &p.UpdatedAt,
 		new(string), new(string), new(string), new(string),
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -72,17 +73,21 @@ func (r *Repository) GetPostByID(ctx context.Context, id string) (Post, error) {
 	if imagePath.Valid {
 		p.ImagePath = imagePath.String
 	}
+	if groupID.Valid {
+		p.GroupID = groupID.String
+	}
 	return r.attachAuthorAndViewers(ctx, p)
 }
 
 func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, offset int) ([]Post, error) {
 	// Feed = public posts from everyone + followers-only/selected posts from people viewer follows
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT p.id, p.author_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
+		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
 		JOIN users u ON u.id = p.author_id
-		WHERE
+		WHERE p.group_id IS NULL
+		  AND (
 		    p.author_id = ?
 		    OR p.privacy = 'public'
 		    OR (p.privacy = 'followers' AND EXISTS (
@@ -91,6 +96,7 @@ func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, o
 		    OR (p.privacy = 'selected_followers' AND EXISTS (
 		        SELECT 1 FROM post_viewers pv WHERE pv.post_id = p.id AND pv.user_id = ?
 		    ))
+		  )
 		ORDER BY p.created_at DESC
 		LIMIT ? OFFSET ?;
 	`, viewerID, viewerID, viewerID, limit, offset)
@@ -103,11 +109,12 @@ func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, o
 
 func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string, limit, offset int) ([]Post, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT p.id, p.author_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
+		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
 		JOIN users u ON u.id = p.author_id
 		WHERE p.author_id = ?
+		  AND p.group_id IS NULL
 		  AND (
 		      p.author_id = ?
 		      OR p.privacy = 'public'
@@ -121,6 +128,26 @@ func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string
 		ORDER BY p.created_at DESC
 		LIMIT ? OFFSET ?;
 	`, authorID, viewerID, viewerID, viewerID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return r.scanPostRows(ctx, rows)
+}
+
+func (r *Repository) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit, offset int) ([]Post, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
+		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
+		FROM posts p
+		JOIN users u ON u.id = p.author_id
+		WHERE p.group_id = ?
+		  AND EXISTS (
+		      SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = ?
+		  )
+		ORDER BY p.created_at DESC
+		LIMIT ? OFFSET ?;
+	`, groupID, groupID, viewerID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +220,10 @@ func (r *Repository) scanPostRows(ctx context.Context, rows *sql.Rows) ([]Post, 
 	for rows.Next() {
 		var p Post
 		var a Author
+		var groupID sql.NullString
 		var imagePath sql.NullString
 		if err := rows.Scan(
-			&p.ID, &p.AuthorID, &p.Body, &imagePath, &p.Privacy, &p.CreatedAt, &p.UpdatedAt,
+			&p.ID, &p.AuthorID, &groupID, &p.Body, &imagePath, &p.Privacy, &p.CreatedAt, &p.UpdatedAt,
 			&a.FirstName, &a.LastName, &a.Nickname, &a.AvatarPath,
 		); err != nil {
 			return nil, err
@@ -204,6 +232,9 @@ func (r *Repository) scanPostRows(ctx context.Context, rows *sql.Rows) ([]Post, 
 		p.Author = &a
 		if imagePath.Valid {
 			p.ImagePath = imagePath.String
+		}
+		if groupID.Valid {
+			p.GroupID = groupID.String
 		}
 		posts = append(posts, p)
 	}

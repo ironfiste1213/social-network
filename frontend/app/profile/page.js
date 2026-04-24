@@ -20,7 +20,7 @@ export default function ProfilePage() {
 }
 
 function ProfileContent() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [editing, setEditing]         = useState(false);
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState('');
@@ -70,11 +70,11 @@ function ProfileContent() {
         about_me: form.about_me || null,
         profile_visibility: form.profile_visibility,
       });
+      await refreshUser();
       setSuccess('Profile updated.');
       setEditing(false);
       setAvatarFile(null);
       setAvatarPreview(null);
-      window.location.reload();
     } catch (e) {
       setError(e.message);
     } finally {

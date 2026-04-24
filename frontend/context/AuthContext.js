@@ -7,19 +7,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const initUser = async () => {
+  const refreshUser = async () => {
     try {
       const data = await getCurrentUser();
       setUser(data.user ?? null);
+      return data.user ?? null;
     } catch {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    initUser();
+    refreshUser();
   }, []);
 
   const login = async (data) => {
@@ -57,6 +59,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     register,
+    refreshUser,
   };
 
   return (
