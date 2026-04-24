@@ -20,6 +20,11 @@ const maxImageSize = 10 << 20 // 10MB
 type Handler struct {
 	service   *Service
 	uploadDir string
+	comments  PostSubrouteHandler
+}
+
+type PostSubrouteHandler interface {
+	HandlePostSubroute(w http.ResponseWriter, r *http.Request, postID, subpath string) bool
 }
 
 func NewHandler(db *sql.DB, uploadDir string) *Handler {
@@ -31,7 +36,10 @@ func NewHandler(db *sql.DB, uploadDir string) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/posts", h.handlePosts)
 	mux.HandleFunc("/posts/", h.handlePostByID)
-	mux.HandleFunc("/user/", h.handleUserPosts) // only intercepts /users/{id}/posts
+}
+
+func (h *Handler) SetCommentsHandler(handler PostSubrouteHandler) {
+	h.comments = handler
 }
 
 // POST /posts         — create
@@ -57,6 +65,11 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	if len(parts) == 2 && h.comments != nil && h.comments.HandlePostSubroute(w, r, postID, parts[1]) {
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "image" {
 		h.uploadImage(w, r, postID)
 		return
@@ -68,19 +81,17 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
-// GET /users/{id}/posts  — only handle this sub-route, ignore everything else
-func (h *Handler) handleUserPosts(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/users/")
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 || parts[1] != "posts" {
-		http.NotFound(w, r)
-		return
+// GET /users/{id}/posts
+func (h *Handler) HandleUserPostRoutes(w http.ResponseWriter, r *http.Request, authorID, sub string) bool {
+	if sub != "posts" {
+		return false
 	}
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return true
 	}
-	h.getUserPosts(w, r, parts[0])
+	h.getUserPosts(w, r, authorID)
+	return true
 }
 
 func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {

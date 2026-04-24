@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"social-network/backend/pkg/auth"
+	"social-network/backend/pkg/comments"
 	"social-network/backend/pkg/db/sqlite"
 	"social-network/backend/pkg/followers"
 	"social-network/backend/pkg/posts"
@@ -46,7 +47,12 @@ func main() {
 	// Posts
 	postsHandler := posts.NewHandler(db, uploadDir)
 	postsHandler.RegisterRoutes(mux)
+	usersHandler.SetPostsHandler(postsHandler)
 	mux.HandleFunc("/posts/my-followers", postsHandler.GetMyFollowers)
+
+	// Comments
+	commentsHandler := comments.NewHandler(db, uploadDir)
+	postsHandler.SetCommentsHandler(commentsHandler)
 
 	// Static uploads
 	mux.Handle("/uploads/", users.ServeUploads(uploadDir))

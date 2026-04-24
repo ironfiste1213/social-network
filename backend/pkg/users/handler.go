@@ -24,10 +24,15 @@ type FollowRouteHandler interface {
 	HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request, targetID, sub string) bool
 }
 
+type PostRouteHandler interface {
+	HandleUserPostRoutes(w http.ResponseWriter, r *http.Request, targetID, sub string) bool
+}
+
 type Handler struct {
 	service          *Service
 	uploadDir        string
 	followersHandler FollowRouteHandler
+	postsHandler     PostRouteHandler
 }
 
 func NewHandler(db *sql.DB, uploadDir string) *Handler {
@@ -42,6 +47,11 @@ func NewHandler(db *sql.DB, uploadDir string) *Handler {
 // SetFollowersHandler wires in the followers handler for /users/{id}/followers etc.
 func (h *Handler) SetFollowersHandler(fh FollowRouteHandler) {
 	h.followersHandler = fh
+}
+
+// SetPostsHandler wires in the posts handler for /users/{id}/posts.
+func (h *Handler) SetPostsHandler(ph PostRouteHandler) {
+	h.postsHandler = ph
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -200,6 +210,13 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && h.followersHandler != nil {
 		sub := parts[1]
 		if h.followersHandler.HandleUserFollowRoutes(w, r, targetID, sub) {
+			return
+		}
+	}
+
+	if len(parts) == 2 && h.postsHandler != nil {
+		sub := parts[1]
+		if h.postsHandler.HandleUserPostRoutes(w, r, targetID, sub) {
 			return
 		}
 	}
