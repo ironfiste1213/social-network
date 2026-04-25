@@ -1,0 +1,403 @@
+package groups
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+const sessionCookieName = "session_id"
+
+type Handler struct {
+	service *Service
+}
+
+func NewHandler(db *sql.DB) *Handler {
+	repo := NewRepository(db)
+	service := NewService(repo)
+	return &Handler{service: service}
+}
+
+func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/groups", h.handleGroups)
+	mux.HandleFunc("/groups/", h.handleGroupRoutes)
+}
+
+func (h *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.listGroups(w, r)
+	case http.MethodPost:
+		h.createGroup(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/groups/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch parts[0] {
+	case "requests":
+		if len(parts) != 3 || r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.respondJoinRequest(w, r, parts[1], parts[2])
+		return
+	case "invitations":
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			h.listInvitations(w, r)
+			return
+		}
+		if len(parts) != 3 || r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.respondInvitation(w, r, parts[1], parts[2])
+		return
+	}
+
+	groupID := parts[0]
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.getGroup(w, r, groupID)
+		return
+	}
+
+	switch parts[1] {
+	case "join":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.requestJoin(w, r, groupID)
+	case "requests":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.listJoinRequests(w, r, groupID)
+	case "invite":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.inviteToGroup(w, r, groupID)
+	case "members":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		h.listMembers(w, r, groupID)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	var input CreateGroupInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	group, err := h.service.CreateGroup(r.Context(), userID, input)
+	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			writeError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to create group")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"group": group})
+}
+
+func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePagination(r)
+	groups, err := h.service.ListGroups(r.Context(), userID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list groups")
+		return
+	}
+	if groups == nil {
+		groups = []Group{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
+func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request, groupID string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	group, err := h.service.GetGroup(r.Context(), groupID, userID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "group not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get group")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"group": group})
+}
+
+func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	request, err := h.service.RequestJoin(r.Context(), groupID, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrNotFound):
+			writeError(w, http.StatusNotFound, "group not found")
+		case errors.Is(err, ErrAlreadyMember):
+			writeError(w, http.StatusConflict, "already a member")
+		case errors.Is(err, ErrPendingExists):
+			writeError(w, http.StatusConflict, "pending join request or invitation already exists")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create join request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"request": request})
+}
+
+func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, groupID string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	requests, err := h.service.ListJoinRequests(r.Context(), groupID, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrNotFound):
+			writeError(w, http.StatusNotFound, "group not found")
+		case errors.Is(err, ErrForbidden):
+			writeError(w, http.StatusForbidden, "forbidden")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to list join requests")
+		}
+		return
+	}
+	if requests == nil {
+		requests = []GroupJoinRequest{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"requests": requests})
+}
+
+func (h *Handler) respondJoinRequest(w http.ResponseWriter, r *http.Request, requestID, action string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	var err error
+	switch action {
+	case "accept":
+		err = h.service.AcceptJoinRequest(r.Context(), requestID, userID)
+	case "decline":
+		err = h.service.DeclineJoinRequest(r.Context(), requestID, userID)
+	default:
+		writeError(w, http.StatusBadRequest, "action must be accept or decline")
+		return
+	}
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrNotFound):
+			writeError(w, http.StatusNotFound, "join request not found")
+		case errors.Is(err, ErrForbidden):
+			writeError(w, http.StatusForbidden, "forbidden")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to respond to join request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	var input InviteToGroupInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	invitation, err := h.service.Invite(r.Context(), groupID, userID, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeError(w, http.StatusBadRequest, "invitee_id is required and must not be yourself")
+		case errors.Is(err, ErrForbidden):
+			writeError(w, http.StatusForbidden, "forbidden")
+		case errors.Is(err, ErrNotFound):
+			writeError(w, http.StatusNotFound, "group not found")
+		case errors.Is(err, ErrUserNotFound):
+			writeError(w, http.StatusNotFound, "user not found")
+		case errors.Is(err, ErrAlreadyMember):
+			writeError(w, http.StatusConflict, "user is already a member")
+		case errors.Is(err, ErrPendingExists):
+			writeError(w, http.StatusConflict, "pending invitation already exists")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to invite user")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"invitation": invitation})
+}
+
+func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	invitations, err := h.service.ListInvitations(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list invitations")
+		return
+	}
+	if invitations == nil {
+		invitations = []GroupInvitation{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"invitations": invitations})
+}
+
+func (h *Handler) respondInvitation(w http.ResponseWriter, r *http.Request, invitationID, action string) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+
+	var err error
+	switch action {
+	case "accept":
+		err = h.service.AcceptInvitation(r.Context(), invitationID, userID)
+	case "decline":
+		err = h.service.DeclineInvitation(r.Context(), invitationID, userID)
+	default:
+		writeError(w, http.StatusBadRequest, "action must be accept or decline")
+		return
+	}
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrNotFound):
+			writeError(w, http.StatusNotFound, "invitation not found")
+		case errors.Is(err, ErrForbidden):
+			writeError(w, http.StatusForbidden, "forbidden")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to respond to invitation")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request, groupID string) {
+	if _, ok := h.authenticate(w, r); !ok {
+		return
+	}
+
+	members, err := h.service.ListMembers(r.Context(), groupID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "group not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to list members")
+		return
+	}
+	if members == nil {
+		members = []GroupMember{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+}
+
+func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return "", false
+	}
+
+	userID, err := h.service.CurrentUserID(r.Context(), cookie.Value)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return "", false
+	}
+
+	return userID, true
+}
+
+func parsePagination(r *http.Request) (limit, offset int) {
+	limit = 20
+	offset = 0
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	return limit, offset
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
