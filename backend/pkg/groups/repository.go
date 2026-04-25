@@ -9,8 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-///////////////// bel role ----> member_role!!!!!!!!!!!!!!!!!!
-
 var ErrNotFound = errors.New("group not found")
 
 type Repository struct {
@@ -39,7 +37,7 @@ func (r *Repository) CreateGroup(ctx context.Context, creatorID string, input Cr
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO group_members (group_id, user_id, role)
+		INSERT INTO group_members (group_id, user_id, member_role)
 		VALUES (?, ?, 'creator');
 	`, id, creatorID)
 	if err != nil {
@@ -71,7 +69,7 @@ func (r *Repository) GetGroupByID(ctx context.Context, groupID, viewerID string)
 		       COALESCE(u.avatar_path, ''),
 		       (SELECT COUNT(1) FROM group_members gm WHERE gm.group_id = g.id) AS member_count,
 		       EXISTS(SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ?),
-		       COALESCE((SELECT gm.role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
+		       COALESCE((SELECT gm.member_role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending'),
 		       COALESCE((SELECT gjr.id FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending' LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_invitations gi WHERE gi.group_id = g.id AND gi.invitee_id = ? AND gi.status = 'pending'),
@@ -124,7 +122,7 @@ func (r *Repository) ListGroups(ctx context.Context, viewerID string, limit, off
 		       COALESCE(u.avatar_path, ''),
 		       (SELECT COUNT(1) FROM group_members gm WHERE gm.group_id = g.id) AS member_count,
 		       EXISTS(SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ?),
-		       COALESCE((SELECT gm.role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
+		       COALESCE((SELECT gm.member_role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending'),
 		       COALESCE((SELECT gjr.id FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending' LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_invitations gi WHERE gi.group_id = g.id AND gi.invitee_id = ? AND gi.status = 'pending'),
@@ -185,7 +183,7 @@ func (r *Repository) UserExists(ctx context.Context, userID string) (bool, error
 func (r *Repository) GetMembershipRole(ctx context.Context, groupID, userID string) (string, bool, error) {
 	var role string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT role
+		SELECT member_role
 		FROM group_members
 		WHERE group_id = ? AND user_id = ?;
 	`, groupID, userID).Scan(&role)
@@ -349,7 +347,7 @@ func (r *Repository) AcceptJoinRequest(ctx context.Context, requestID string) er
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO group_members (group_id, user_id, role)
+		INSERT OR IGNORE INTO group_members (group_id, user_id, member_role)
 		VALUES (?, ?, 'member');
 	`, groupID, userID)
 	if err != nil {
@@ -432,7 +430,7 @@ func (r *Repository) GetInvitationByID(ctx context.Context, invitationID, viewer
 		       g.created_at,
 		       (SELECT COUNT(1) FROM group_members gm WHERE gm.group_id = g.id) AS member_count,
 		       EXISTS(SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ?),
-		       COALESCE((SELECT gm.role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
+		       COALESCE((SELECT gm.member_role FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ? LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending'),
 		       COALESCE((SELECT gjr.id FROM group_join_requests gjr WHERE gjr.group_id = g.id AND gjr.user_id = ? AND gjr.status = 'pending' LIMIT 1), ''),
 		       EXISTS(SELECT 1 FROM group_invitations gx WHERE gx.group_id = g.id AND gx.invitee_id = ? AND gx.status = 'pending'),
@@ -564,7 +562,7 @@ func (r *Repository) AcceptInvitation(ctx context.Context, invitationID string) 
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO group_members (group_id, user_id, role)
+		INSERT OR IGNORE INTO group_members (group_id, user_id, member_role)
 		VALUES (?, ?, 'member');
 	`, groupID, inviteeID)
 	if err != nil {
@@ -618,13 +616,13 @@ func (r *Repository) ListMembers(ctx context.Context, groupID string) ([]GroupMe
 		       u.last_name,
 		       COALESCE(u.nickname, ''),
 		       COALESCE(u.avatar_path, ''),
-		       gm.role,
+		       gm.member_role,
 		       gm.joined_at
 		FROM group_members gm
 		JOIN users u ON u.id = gm.user_id
 		WHERE gm.group_id = ?
 		ORDER BY
-		    CASE gm.role WHEN 'creator' THEN 0 ELSE 1 END,
+		    CASE gm.member_role WHEN 'creator' THEN 0 ELSE 1 END,
 		    gm.joined_at ASC;
 	`, groupID)
 	if err != nil {
