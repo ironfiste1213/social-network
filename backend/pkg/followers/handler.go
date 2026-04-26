@@ -2,10 +2,11 @@ package followers
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"strings"
 )
 
@@ -14,8 +15,6 @@ type Handler struct {
 }
 
 var ErrUserNotFound = errors.New("user not found")
-
-const sessionCookieName = "session_id"
 
 func NewHandler(db *sql.DB) *Handler {
 	repo := NewRepository(db)
@@ -46,7 +45,7 @@ func (h *Handler) routeFollow(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID string) {
 	if targetID == "" {
 		fmt.Println("[FOLLOWERS][HANDLER] follow rejected: missing target user id")
-		writeError(w, http.StatusBadRequest, "missing target user id")
+		response.Error(w, http.StatusBadRequest, "missing target user id")
 		return
 	}
 	viewerID := h.getUserID(r, w)
@@ -63,36 +62,36 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID 
 		switch {
 		case errors.Is(err, ErrCannotFollowSelf):
 			fmt.Println("[FOLLOWERS][HANDLER] follow rejected: cannot follow self")
-			writeError(w, http.StatusBadRequest, "cannot follow yourself")
+			response.Error(w, http.StatusBadRequest, "cannot follow yourself")
 		case errors.Is(err, ErrAlreadyFollowing):
 			fmt.Println("[FOLLOWERS][HANDLER] follow rejected: already following")
-			writeError(w, http.StatusConflict, "already following")
+			response.Error(w, http.StatusConflict, "already following")
 		case errors.Is(err, ErrRequestAlreadyExists):
 			fmt.Println("[FOLLOWERS][HANDLER] follow rejected: request already exists")
-			writeError(w, http.StatusConflict, "follow request already sent")
+			response.Error(w, http.StatusConflict, "follow request already sent")
 		case errors.Is(err, ErrNotFound):
 			fmt.Println("[FOLLOWERS][HANDLER] follow rejected: target user not found")
-			writeError(w, http.StatusNotFound, "user not found")
+			response.Error(w, http.StatusNotFound, "user not found")
 		case err != nil:
 			fmt.Println("[FOLLOWERS][HANDLER] follow failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed to follow")
+			response.Error(w, http.StatusInternalServerError, "failed to follow")
 		default:
 			fmt.Println("[FOLLOWERS][HANDLER] follow success")
-			writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+			response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 		}
 
 	case http.MethodDelete:
 		if err := h.service.Unfollow(r.Context(), viewerID, targetID); err != nil {
 			fmt.Println("[FOLLOWERS][HANDLER] unfollow failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed to unfollow")
+			response.Error(w, http.StatusInternalServerError, "failed to unfollow")
 			return
 		}
 		fmt.Println("[FOLLOWERS][HANDLER] unfollow success")
-		writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+		response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 
 	default:
 		fmt.Println("[FOLLOWERS][HANDLER] follow route rejected: method not allowed:", r.Method)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -100,7 +99,7 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID 
 func (h *Handler) handleListRequests(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		fmt.Println("[FOLLOWERS][HANDLER] list requests rejected: method not allowed:", r.Method)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	viewerID := h.getUserID(r, w)
@@ -113,21 +112,21 @@ func (h *Handler) handleListRequests(w http.ResponseWriter, r *http.Request) {
 	reqs, err := h.service.GetPendingRequests(r.Context(), viewerID)
 	if err != nil {
 		fmt.Println("[FOLLOWERS][HANDLER] list requests failed:", err)
-		writeError(w, http.StatusInternalServerError, "failed to get requests")
+		response.Error(w, http.StatusInternalServerError, "failed to get requests")
 		return
 	}
 	if reqs == nil {
 		reqs = []FollowRequest{}
 	}
 	fmt.Println("[FOLLOWERS][HANDLER] list requests success count:", len(reqs))
-	writeJSON(w, http.StatusOK, map[string]any{"requests": reqs})
+	response.JSON(w, http.StatusOK, map[string]any{"requests": reqs})
 }
 
 // POST /follow/requests/{requestID}/accept|decline
 func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		fmt.Println("[FOLLOWERS][HANDLER] respond request rejected: method not allowed:", r.Method)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	viewerID := h.getUserID(r, w)
@@ -140,7 +139,7 @@ func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(path, "/")
 	if len(parts) != 2 {
 		fmt.Println("[FOLLOWERS][HANDLER] respond request rejected: invalid path:", path)
-		writeError(w, http.StatusBadRequest, "invalid path")
+		response.Error(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	requestID, action := parts[0], parts[1]
@@ -151,26 +150,26 @@ func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 		if err := h.service.AcceptRequest(r.Context(), requestID, viewerID); err != nil {
 			if errors.Is(err, ErrNotFound) {
 				fmt.Println("[FOLLOWERS][HANDLER] accept request failed: not found")
-				writeError(w, http.StatusNotFound, "request not found")
+				response.Error(w, http.StatusNotFound, "request not found")
 				return
 			}
 			fmt.Println("[FOLLOWERS][HANDLER] accept request failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed to accept")
+			response.Error(w, http.StatusInternalServerError, "failed to accept")
 			return
 		}
 	case "decline":
 		if err := h.service.DeclineRequest(r.Context(), requestID, viewerID); err != nil {
 			fmt.Println("[FOLLOWERS][HANDLER] decline request failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed to decline")
+			response.Error(w, http.StatusInternalServerError, "failed to decline")
 			return
 		}
 	default:
 		fmt.Println("[FOLLOWERS][HANDLER] invalid follow request action:", action)
-		writeError(w, http.StatusBadRequest, "action must be accept or decline")
+		response.Error(w, http.StatusBadRequest, "action must be accept or decline")
 		return
 	}
 	fmt.Println("[FOLLOWERS][HANDLER] respond request success")
-	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
 // HandleUserFollowRoutes is called by the users handler for sub-routes:
@@ -190,14 +189,14 @@ func (h *Handler) HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request,
 		list, err := h.service.GetFollowers(r.Context(), targetID)
 		if err != nil {
 			fmt.Println("[FOLLOWERS][HANDLER] get followers failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed")
+			response.Error(w, http.StatusInternalServerError, "failed")
 			return true
 		}
 		if list == nil {
 			list = []UserSummary{}
 		}
 		fmt.Println("[FOLLOWERS][HANDLER] get followers success count:", len(list))
-		writeJSON(w, http.StatusOK, map[string]any{"followers": list})
+		response.JSON(w, http.StatusOK, map[string]any{"followers": list})
 		return true
 
 	case "following":
@@ -205,14 +204,14 @@ func (h *Handler) HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request,
 		list, err := h.service.GetFollowing(r.Context(), targetID)
 		if err != nil {
 			fmt.Println("[FOLLOWERS][HANDLER] get following failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed")
+			response.Error(w, http.StatusInternalServerError, "failed")
 			return true
 		}
 		if list == nil {
 			list = []UserSummary{}
 		}
 		fmt.Println("[FOLLOWERS][HANDLER] get following success count:", len(list))
-		writeJSON(w, http.StatusOK, map[string]any{"following": list})
+		response.JSON(w, http.StatusOK, map[string]any{"following": list})
 		return true
 
 	case "follow-status":
@@ -225,43 +224,33 @@ func (h *Handler) HandleUserFollowRoutes(w http.ResponseWriter, r *http.Request,
 		status, err := h.service.GetFollowStatus(r.Context(), viewerID, targetID)
 		if err != nil {
 			fmt.Println("[FOLLOWERS][HANDLER] get follow status failed:", err)
-			writeError(w, http.StatusInternalServerError, "failed")
+			response.Error(w, http.StatusInternalServerError, "failed")
 			return true
 		}
 		fmt.Println("[FOLLOWERS][HANDLER] get follow status success")
-		writeJSON(w, http.StatusOK, status)
+		response.JSON(w, http.StatusOK, status)
 		return true
 	}
 	fmt.Println("[FOLLOWERS][HANDLER] user follow sub-route not handled:", sub)
 	return false
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
-}
-
 func (h *Handler) getUserID(r *http.Request, w http.ResponseWriter) string {
-	cookie, err := r.Cookie(sessionCookieName)
+	sessionID, err := sessionauth.SessionIDFromRequest(r)
 	if err != nil {
 		fmt.Println("[FOLLOWERS][HANDLER] session cookie missing")
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		response.Error(w, http.StatusUnauthorized, "not authenticated")
 		return ""
 	}
-	fmt.Println("[FOLLOWERS][HANDLER] resolving user from session:", cookie.Value)
-	viewerID, err := h.service.currentUserID(r.Context(), cookie.Value)
+	fmt.Println("[FOLLOWERS][HANDLER] resolving user from session:", sessionID)
+	viewerID, err := h.service.currentUserID(r.Context(), sessionID)
 	if err != nil {
 		fmt.Println("[FOLLOWERS][HANDLER] current user lookup failed:", err)
 		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrInvalidCredentials) {
-			writeError(w, http.StatusUnauthorized, "not authenticated")
+			response.Error(w, http.StatusUnauthorized, "not authenticated")
 			return ""
 		}
-		writeError(w, http.StatusInternalServerError, "failed to get current user")
+		response.Error(w, http.StatusInternalServerError, "failed to get current user")
 		return ""
 	}
 	fmt.Println("[FOLLOWERS][HANDLER] authenticated viewer:", viewerID)

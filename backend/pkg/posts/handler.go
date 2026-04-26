@@ -8,13 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
-const sessionCookieName = "session_id"
 const maxImageSize = 10 << 20 // 10MB
 
 type Handler struct {
@@ -51,7 +52,7 @@ func (h *Handler) handlePosts(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.getFeed(w, r)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -78,7 +79,7 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 		h.deletePost(w, r, postID)
 		return
 	}
-	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
 // GET /users/{id}/posts
@@ -87,7 +88,7 @@ func (h *Handler) HandleUserPostRoutes(w http.ResponseWriter, r *http.Request, a
 		return false
 	}
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return true
 	}
 	h.getUserPosts(w, r, authorID)
@@ -101,23 +102,23 @@ func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 	}
 	var input CreatePostInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	post, err := h.service.CreatePost(r.Context(), authorID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
-			writeError(w, http.StatusBadRequest, "invalid input: body required; selected_followers requires viewer_ids")
+			response.Error(w, http.StatusBadRequest, "invalid input: body required; selected_followers requires viewer_ids")
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeError(w, http.StatusForbidden, "you must be a group member to post in this group")
+			response.Error(w, http.StatusForbidden, "you must be a group member to post in this group")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to create post")
+		response.Error(w, http.StatusInternalServerError, "failed to create post")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"post": post})
+	response.JSON(w, http.StatusCreated, map[string]any{"post": post})
 }
 
 func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
@@ -128,13 +129,13 @@ func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
 	posts, err := h.service.GetFeed(r.Context(), viewerID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get feed")
+		response.Error(w, http.StatusInternalServerError, "failed to get feed")
 		return
 	}
 	if posts == nil {
 		posts = []Post{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"posts": posts})
+	response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
 }
 
 func (h *Handler) getUserPosts(w http.ResponseWriter, r *http.Request, authorID string) {
@@ -145,13 +146,13 @@ func (h *Handler) getUserPosts(w http.ResponseWriter, r *http.Request, authorID 
 	limit, offset := parsePagination(r)
 	posts, err := h.service.GetUserPosts(r.Context(), authorID, viewerID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get posts")
+		response.Error(w, http.StatusInternalServerError, "failed to get posts")
 		return
 	}
 	if posts == nil {
 		posts = []Post{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"posts": posts})
+	response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
 }
 
 func (h *Handler) deletePost(w http.ResponseWriter, r *http.Request, postID string) {
@@ -161,18 +162,18 @@ func (h *Handler) deletePost(w http.ResponseWriter, r *http.Request, postID stri
 	}
 	if err := h.service.DeletePost(r.Context(), postID, requesterID); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			writeError(w, http.StatusNotFound, "post not found")
+			response.Error(w, http.StatusNotFound, "post not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to delete post")
+		response.Error(w, http.StatusInternalServerError, "failed to delete post")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID string) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	authorID, ok := h.authenticate(w, r)
@@ -181,12 +182,12 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize)
 	if err := r.ParseMultipartForm(maxImageSize); err != nil {
-		writeError(w, http.StatusBadRequest, "file too large or invalid form")
+		response.Error(w, http.StatusBadRequest, "file too large or invalid form")
 		return
 	}
 	file, header, err := r.FormFile("image")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing image file")
+		response.Error(w, http.StatusBadRequest, "missing image file")
 		return
 	}
 	defer file.Close()
@@ -194,7 +195,7 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
 	if !allowed[ext] {
-		writeError(w, http.StatusBadRequest, "only jpg, png, gif allowed")
+		response.Error(w, http.StatusBadRequest, "only jpg, png, gif allowed")
 		return
 	}
 
@@ -202,27 +203,27 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 	dest := filepath.Join(h.uploadDir, filename)
 	out, err := os.Create(dest)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save file")
+		response.Error(w, http.StatusInternalServerError, "failed to save file")
 		return
 	}
 	defer out.Close()
 	if _, err := io.Copy(out, file); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write file")
+		response.Error(w, http.StatusInternalServerError, "failed to write file")
 		return
 	}
 
 	imagePath := "/uploads/" + filename
 	if err := h.service.UpdateImagePath(r.Context(), postID, authorID, imagePath); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update post image")
+		response.Error(w, http.StatusInternalServerError, "failed to update post image")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
+	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
 }
 
 // GET /posts/my-followers  — list of your followers for the privacy picker
 func (h *Handler) GetMyFollowers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	userID, ok := h.authenticate(w, r)
@@ -231,29 +232,19 @@ func (h *Handler) GetMyFollowers(w http.ResponseWriter, r *http.Request) {
 	}
 	followers, err := h.service.GetFollowersOfUser(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get followers")
+		response.Error(w, http.StatusInternalServerError, "failed to get followers")
 		return
 	}
 	if followers == nil {
 		followers = []FollowerSummary{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"followers": followers})
+	response.JSON(w, http.StatusOK, map[string]any{"followers": followers})
 }
 
 // --- helpers ---
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-	userID, err := h.service.CurrentUserID(r.Context(), cookie.Value)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-	return userID, true
+	return sessionauth.RequireUserID(w, r, h.service.CurrentUserID)
 }
 
 func parsePagination(r *http.Request) (limit, offset int) {
@@ -270,14 +261,4 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		}
 	}
 	return
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }

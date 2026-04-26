@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
 )
-
-const sessionCookieName = "session_id"
 
 type Handler struct {
 	service *Service
@@ -33,7 +33,7 @@ func (h *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.createGroup(w, r)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -48,7 +48,7 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 	switch parts[0] {
 	case "requests":
 		if len(parts) != 3 || r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.respondJoinRequest(w, r, parts[1], parts[2])
@@ -59,7 +59,7 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(parts) != 3 || r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.respondInvitation(w, r, parts[1], parts[2])
@@ -69,7 +69,7 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 	groupID := parts[0]
 	if len(parts) == 1 {
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.getGroup(w, r, groupID)
@@ -79,25 +79,25 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 	switch parts[1] {
 	case "join":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.requestJoin(w, r, groupID)
 	case "requests":
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.listJoinRequests(w, r, groupID)
 	case "invite":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.inviteToGroup(w, r, groupID)
 	case "members":
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.listMembers(w, r, groupID)
@@ -114,21 +114,21 @@ func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
 	group, err := h.service.CreateGroup(r.Context(), userID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
-			writeError(w, http.StatusBadRequest, "title is required")
+			response.Error(w, http.StatusBadRequest, "title is required")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to create group")
+		response.Error(w, http.StatusInternalServerError, "failed to create group")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"group": group})
+	response.JSON(w, http.StatusCreated, map[string]any{"group": group})
 }
 
 func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
@@ -140,14 +140,14 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
 	groups, err := h.service.ListGroups(r.Context(), userID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list groups")
+		response.Error(w, http.StatusInternalServerError, "failed to list groups")
 		return
 	}
 	if groups == nil {
 		groups = []Group{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+	response.JSON(w, http.StatusOK, map[string]any{"groups": groups})
 }
 
 func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -159,14 +159,14 @@ func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request, groupID strin
 	group, err := h.service.GetGroup(r.Context(), groupID, userID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			writeError(w, http.StatusNotFound, "group not found")
+			response.Error(w, http.StatusNotFound, "group not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to get group")
+		response.Error(w, http.StatusInternalServerError, "failed to get group")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"group": group})
+	response.JSON(w, http.StatusOK, map[string]any{"group": group})
 }
 
 func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -179,18 +179,18 @@ func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID st
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, "group not found")
+			response.Error(w, http.StatusNotFound, "group not found")
 		case errors.Is(err, ErrAlreadyMember):
-			writeError(w, http.StatusConflict, "already a member")
+			response.Error(w, http.StatusConflict, "already a member")
 		case errors.Is(err, ErrPendingExists):
-			writeError(w, http.StatusConflict, "pending join request or invitation already exists")
+			response.Error(w, http.StatusConflict, "pending join request or invitation already exists")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to create join request")
+			response.Error(w, http.StatusInternalServerError, "failed to create join request")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"request": request})
+	response.JSON(w, http.StatusCreated, map[string]any{"request": request})
 }
 
 func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -203,11 +203,11 @@ func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, group
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, "group not found")
+			response.Error(w, http.StatusNotFound, "group not found")
 		case errors.Is(err, ErrForbidden):
-			writeError(w, http.StatusForbidden, "forbidden")
+			response.Error(w, http.StatusForbidden, "forbidden")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to list join requests")
+			response.Error(w, http.StatusInternalServerError, "failed to list join requests")
 		}
 		return
 	}
@@ -215,7 +215,7 @@ func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, group
 		requests = []GroupJoinRequest{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"requests": requests})
+	response.JSON(w, http.StatusOK, map[string]any{"requests": requests})
 }
 
 func (h *Handler) respondJoinRequest(w http.ResponseWriter, r *http.Request, requestID, action string) {
@@ -231,23 +231,23 @@ func (h *Handler) respondJoinRequest(w http.ResponseWriter, r *http.Request, req
 	case "decline":
 		err = h.service.DeclineJoinRequest(r.Context(), requestID, userID)
 	default:
-		writeError(w, http.StatusBadRequest, "action must be accept or decline")
+		response.Error(w, http.StatusBadRequest, "action must be accept or decline")
 		return
 	}
 
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, "join request not found")
+			response.Error(w, http.StatusNotFound, "join request not found")
 		case errors.Is(err, ErrForbidden):
-			writeError(w, http.StatusForbidden, "forbidden")
+			response.Error(w, http.StatusForbidden, "forbidden")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to respond to join request")
+			response.Error(w, http.StatusInternalServerError, "failed to respond to join request")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
 func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -258,7 +258,7 @@ func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID 
 
 	var input InviteToGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
@@ -266,24 +266,24 @@ func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID 
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			writeError(w, http.StatusBadRequest, "invitee_id is required and must not be yourself")
+			response.Error(w, http.StatusBadRequest, "invitee_id is required and must not be yourself")
 		case errors.Is(err, ErrForbidden):
-			writeError(w, http.StatusForbidden, "forbidden")
+			response.Error(w, http.StatusForbidden, "forbidden")
 		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, "group not found")
+			response.Error(w, http.StatusNotFound, "group not found")
 		case errors.Is(err, ErrUserNotFound):
-			writeError(w, http.StatusNotFound, "user not found")
+			response.Error(w, http.StatusNotFound, "user not found")
 		case errors.Is(err, ErrAlreadyMember):
-			writeError(w, http.StatusConflict, "user is already a member")
+			response.Error(w, http.StatusConflict, "user is already a member")
 		case errors.Is(err, ErrPendingExists):
-			writeError(w, http.StatusConflict, "pending invitation already exists")
+			response.Error(w, http.StatusConflict, "pending invitation already exists")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to invite user")
+			response.Error(w, http.StatusInternalServerError, "failed to invite user")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"invitation": invitation})
+	response.JSON(w, http.StatusCreated, map[string]any{"invitation": invitation})
 }
 
 func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
@@ -294,14 +294,14 @@ func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
 
 	invitations, err := h.service.ListInvitations(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list invitations")
+		response.Error(w, http.StatusInternalServerError, "failed to list invitations")
 		return
 	}
 	if invitations == nil {
 		invitations = []GroupInvitation{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"invitations": invitations})
+	response.JSON(w, http.StatusOK, map[string]any{"invitations": invitations})
 }
 
 func (h *Handler) respondInvitation(w http.ResponseWriter, r *http.Request, invitationID, action string) {
@@ -317,23 +317,23 @@ func (h *Handler) respondInvitation(w http.ResponseWriter, r *http.Request, invi
 	case "decline":
 		err = h.service.DeclineInvitation(r.Context(), invitationID, userID)
 	default:
-		writeError(w, http.StatusBadRequest, "action must be accept or decline")
+		response.Error(w, http.StatusBadRequest, "action must be accept or decline")
 		return
 	}
 
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, "invitation not found")
+			response.Error(w, http.StatusNotFound, "invitation not found")
 		case errors.Is(err, ErrForbidden):
-			writeError(w, http.StatusForbidden, "forbidden")
+			response.Error(w, http.StatusForbidden, "forbidden")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to respond to invitation")
+			response.Error(w, http.StatusInternalServerError, "failed to respond to invitation")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
 func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -344,33 +344,21 @@ func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request, groupID st
 	members, err := h.service.ListMembers(r.Context(), groupID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			writeError(w, http.StatusNotFound, "group not found")
+			response.Error(w, http.StatusNotFound, "group not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to list members")
+		response.Error(w, http.StatusInternalServerError, "failed to list members")
 		return
 	}
 	if members == nil {
 		members = []GroupMember{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+	response.JSON(w, http.StatusOK, map[string]any{"members": members})
 }
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-
-	userID, err := h.service.CurrentUserID(r.Context(), cookie.Value)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-
-	return userID, true
+	return sessionauth.RequireUserID(w, r, h.service.CurrentUserID)
 }
 
 func parsePagination(r *http.Request) (limit, offset int) {
@@ -390,14 +378,4 @@ func parsePagination(r *http.Request) (limit, offset int) {
 	}
 
 	return limit, offset
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }

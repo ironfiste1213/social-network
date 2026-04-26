@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"time"
 )
-
-const sessionCookieName = "session_id"
 
 type Handler struct {
 	service *Service
@@ -31,13 +31,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	var input RegisterInput
 	if err := decodeJSON(r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("[HANDLER] Register response: success")
 	setSessionCookie(w, session)
-	writeJSON(w, http.StatusCreated, map[string]any{
+	response.JSON(w, http.StatusCreated, map[string]any{
 		"message": "registration successful",
 		"user":    user.Safe(),
 	})
@@ -59,13 +59,13 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	var input LoginInput
 	if err := decodeJSON(r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("[HANDLER] Login response: success")
 	setSessionCookie(w, session)
-	writeJSON(w, http.StatusOK, map[string]any{
+	response.JSON(w, http.StatusOK, map[string]any{
 		"message": "login successful",
 		"user":    user.Safe(),
 	})
@@ -87,47 +87,47 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	cookie, err := r.Cookie(sessionCookieName)
+	sessionID, err := sessionauth.SessionIDFromRequest(r)
 	if err == nil {
-		if err := h.service.Logout(r.Context(), cookie.Value); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to logout")
+		if err := h.service.Logout(r.Context(), sessionID); err != nil {
+			response.Error(w, http.StatusInternalServerError, "failed to logout")
 			return
 		}
 	}
 
 	clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "logout successful",
 	})
 }
 
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	cookie, err := r.Cookie(sessionCookieName)
+	sessionID, err := sessionauth.SessionIDFromRequest(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		response.Error(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
-	user, err := h.service.CurrentUser(r.Context(), cookie.Value)
+	user, err := h.service.CurrentUser(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrInvalidCredentials) {
-			writeError(w, http.StatusUnauthorized, "not authenticated")
+			response.Error(w, http.StatusUnauthorized, "not authenticated")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to get current user")
+		response.Error(w, http.StatusInternalServerError, "failed to get current user")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	response.JSON(w, http.StatusOK, map[string]any{
 		"user": user.Safe(),
 	})
 }
@@ -135,15 +135,15 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, "invalid input")
+		response.Error(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		response.Error(w, http.StatusUnauthorized, "invalid credentials")
 	case errors.Is(err, ErrEmailAlreadyExists):
-		writeError(w, http.StatusConflict, "email already exists")
+		response.Error(w, http.StatusConflict, "email already exists")
 	case errors.Is(err, ErrNicknameAlreadyExists):
-		writeError(w, http.StatusConflict, "nickname already exists")
+		response.Error(w, http.StatusConflict, "nickname already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal server error")
+		response.Error(w, http.StatusInternalServerError, "internal server error")
 	}
 }
 
@@ -154,21 +154,9 @@ func decodeJSON(r *http.Request, target any) error {
 	return decoder.Decode(target)
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{
-		"error": message,
-	})
-}
-
 func setSessionCookie(w http.ResponseWriter, session Session) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     sessionauth.CookieName,
 		Value:    session.ID,
 		Path:     "/",
 		HttpOnly: true,
@@ -181,7 +169,7 @@ func setSessionCookie(w http.ResponseWriter, session Session) {
 
 func clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     sessionauth.CookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,

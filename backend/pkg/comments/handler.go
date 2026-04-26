@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
-const sessionCookieName = "session_id"
 const maxImageSize = 10 << 20 // 10MB
 
 type Handler struct {
@@ -84,7 +85,7 @@ func (h *Handler) routeWithPostID(w http.ResponseWriter, r *http.Request, postID
 		case http.MethodPost:
 			h.createComment(w, r, postID)
 		default:
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 		return
 	}
@@ -98,7 +99,7 @@ func (h *Handler) routeWithPostID(w http.ResponseWriter, r *http.Request, postID
 	// /posts/{postID}/comments/{commentID}/image
 	if len(parts) == 3 && parts[2] == "image" {
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		h.uploadImage(w, r, commentID)
@@ -111,7 +112,7 @@ func (h *Handler) routeWithPostID(w http.ResponseWriter, r *http.Request, postID
 		return
 	}
 
-	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
 func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, postID string) {
@@ -122,7 +123,7 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, postID s
 
 	var input CreateCommentInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
@@ -130,16 +131,16 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, postID s
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			writeError(w, http.StatusBadRequest, "body is required")
+			response.Error(w, http.StatusBadRequest, "body is required")
 		case errors.Is(err, ErrForbidden):
-			writeError(w, http.StatusForbidden, "cannot comment on this post")
+			response.Error(w, http.StatusForbidden, "cannot comment on this post")
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to create comment")
+			response.Error(w, http.StatusInternalServerError, "failed to create comment")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"comment": comment})
+	response.JSON(w, http.StatusCreated, map[string]any{"comment": comment})
 }
 
 func (h *Handler) listComments(w http.ResponseWriter, r *http.Request, postID string) {
@@ -151,17 +152,17 @@ func (h *Handler) listComments(w http.ResponseWriter, r *http.Request, postID st
 	comments, err := h.service.GetComments(r.Context(), postID, viewerID)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			writeError(w, http.StatusForbidden, "cannot view comments on this post")
+			response.Error(w, http.StatusForbidden, "cannot view comments on this post")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to get comments")
+		response.Error(w, http.StatusInternalServerError, "failed to get comments")
 		return
 	}
 
 	if comments == nil {
 		comments = []Comment{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"comments": comments})
+	response.JSON(w, http.StatusOK, map[string]any{"comments": comments})
 }
 
 func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, commentID string) {
@@ -172,14 +173,14 @@ func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, commentI
 
 	if err := h.service.DeleteComment(r.Context(), commentID, requesterID); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			writeError(w, http.StatusNotFound, "comment not found")
+			response.Error(w, http.StatusNotFound, "comment not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to delete comment")
+		response.Error(w, http.StatusInternalServerError, "failed to delete comment")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, commentID string) {
@@ -190,13 +191,13 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, commentID 
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize)
 	if err := r.ParseMultipartForm(maxImageSize); err != nil {
-		writeError(w, http.StatusBadRequest, "file too large or invalid form")
+		response.Error(w, http.StatusBadRequest, "file too large or invalid form")
 		return
 	}
 
 	file, header, err := r.FormFile("image")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing image file")
+		response.Error(w, http.StatusBadRequest, "missing image file")
 		return
 	}
 	defer file.Close()
@@ -204,7 +205,7 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, commentID 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
 	if !allowed[ext] {
-		writeError(w, http.StatusBadRequest, "only jpg, png, gif allowed")
+		response.Error(w, http.StatusBadRequest, "only jpg, png, gif allowed")
 		return
 	}
 
@@ -212,44 +213,24 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, commentID 
 	dest := filepath.Join(h.uploadDir, filename)
 	out, err := os.Create(dest)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save file")
+		response.Error(w, http.StatusInternalServerError, "failed to save file")
 		return
 	}
 	defer out.Close()
 	if _, err := io.Copy(out, file); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write file")
+		response.Error(w, http.StatusInternalServerError, "failed to write file")
 		return
 	}
 
 	imagePath := "/uploads/" + filename
 	if err := h.service.UpdateImagePath(r.Context(), commentID, authorID, imagePath); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update comment image")
+		response.Error(w, http.StatusInternalServerError, "failed to update comment image")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
+	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
 }
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-	userID, err := h.service.CurrentUserID(r.Context(), cookie.Value)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
-	}
-	return userID, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+	return sessionauth.RequireUserID(w, r, h.service.CurrentUserID)
 }

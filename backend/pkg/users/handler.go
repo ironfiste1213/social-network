@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +18,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const sessionCookieName = "session_id"
 const maxAvatarSize = 5 << 20 // 5MB
 
 // FollowRouteHandler is implemented by the followers.Handler
@@ -66,58 +67,58 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, err := h.authenticate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		response.Error(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"user": user})
+		response.JSON(w, http.StatusOK, map[string]any{"user": user})
 	case http.MethodPatch:
 		h.handleUpdateMe(w, r, user.ID)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
 	var input UpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		response.Error(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	updated, err := h.service.UpdateProfile(r.Context(), userID, input)
 	if err != nil {
 		if errors.Is(err, ErrNicknameAlreadyExists) {
-			writeError(w, http.StatusConflict, "nickname already exists")
+			response.Error(w, http.StatusConflict, "nickname already exists")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to update profile")
+		response.Error(w, http.StatusInternalServerError, "failed to update profile")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": updated})
+	response.JSON(w, http.StatusOK, map[string]any{"user": updated})
 }
 
 // POST /users/me/avatar
 func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	user, err := h.authenticate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		response.Error(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarSize)
 	if err := r.ParseMultipartForm(maxAvatarSize); err != nil {
-		writeError(w, http.StatusBadRequest, "file too large or invalid form")
+		response.Error(w, http.StatusBadRequest, "file too large or invalid form")
 		return
 	}
 
 	file, header, err := r.FormFile("avatar")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing avatar file")
+		response.Error(w, http.StatusBadRequest, "missing avatar file")
 		return
 	}
 	defer file.Close()
@@ -125,7 +126,7 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
 	if !allowed[ext] {
-		writeError(w, http.StatusBadRequest, "only jpg, png, gif allowed")
+		response.Error(w, http.StatusBadRequest, "only jpg, png, gif allowed")
 		return
 	}
 
@@ -133,12 +134,12 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	dest := filepath.Join(h.uploadDir, filename)
 	out, err := os.Create(dest)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save file")
+		response.Error(w, http.StatusInternalServerError, "failed to save file")
 		return
 	}
 	defer out.Close()
 	if _, err := io.Copy(out, file); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write file")
+		response.Error(w, http.StatusInternalServerError, "failed to write file")
 		return
 	}
 
@@ -147,21 +148,21 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		AvatarPath: &avatarPath,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update avatar")
+		response.Error(w, http.StatusInternalServerError, "failed to update avatar")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": updated, "avatar_path": avatarPath})
+	response.JSON(w, http.StatusOK, map[string]any{"user": updated, "avatar_path": avatarPath})
 }
 
 func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	user, err := h.authenticate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		response.Error(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
@@ -169,7 +170,7 @@ func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsedLimit, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid limit")
+			response.Error(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
 		limit = parsedLimit
@@ -178,10 +179,10 @@ func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	results, err := h.service.SearchUsers(r.Context(), user.ID, r.URL.Query().Get("q"), limit)
 	if err != nil {
 		if errors.Is(err, ErrInvalidSearchQuery) {
-			writeError(w, http.StatusBadRequest, "search query must be at least 2 characters")
+			response.Error(w, http.StatusBadRequest, "search query must be at least 2 characters")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to search users")
+		response.Error(w, http.StatusInternalServerError, "failed to search users")
 		return
 	}
 
@@ -189,7 +190,7 @@ func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		results = []SearchResult{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"users": results})
+	response.JSON(w, http.StatusOK, map[string]any{"users": results})
 }
 
 // GET /users/{id}               — public profile
@@ -223,7 +224,7 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 
 	// Main profile route
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -232,10 +233,10 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.service.GetUserByID(r.Context(), targetID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			writeError(w, http.StatusNotFound, "user not found")
+			response.Error(w, http.StatusNotFound, "user not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to get user")
+		response.Error(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
 
@@ -245,14 +246,14 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 		if !canView && requester != nil {
 			following, err := h.service.IsFollowing(r.Context(), requester.ID, profile.ID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to get user")
+				response.Error(w, http.StatusInternalServerError, "failed to get user")
 				return
 			}
 			canView = following
 		}
 
 		if !canView {
-			writeJSON(w, http.StatusOK, map[string]any{
+			response.JSON(w, http.StatusOK, map[string]any{
 				"user": map[string]any{
 					"id":                 profile.ID,
 					"first_name":         profile.FirstName,
@@ -265,29 +266,19 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"user": profile})
+	response.JSON(w, http.StatusOK, map[string]any{"user": profile})
 }
 
 func (h *Handler) authenticate(r *http.Request) (*User, error) {
-	cookie, err := r.Cookie(sessionCookieName)
+	sessionID, err := sessionauth.SessionIDFromRequest(r)
 	if err != nil {
 		return nil, err
 	}
-	user, err := h.service.GetUserBySession(r.Context(), cookie.Value)
+	user, err := h.service.GetUserBySession(r.Context(), sessionID)
 	if err != nil {
 		return nil, err
 	}
 	return &user, nil
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }
 
 // ServeUploads returns a handler that serves files from uploadDir under /uploads/
