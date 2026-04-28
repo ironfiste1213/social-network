@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	p "path"
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
 )
@@ -112,7 +111,7 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		h.listMembers(w, r, groupID)
 	case "events":
-		sub := p.Join(parts...)
+		sub := strings.Join(parts[1:], "/")
 		h.eventshandler.HandleGroupEventRoutes(w, r, groupID, sub)
 	default:
 		http.NotFound(w, r)
