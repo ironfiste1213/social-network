@@ -5,20 +5,30 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"social-network/backend/pkg/response"
-	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
+	p "path"
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 )
 
 type Handler struct {
-	service *Service
+	service       *Service
+	eventshandler EventsRoutHandler
+}
+
+type EventsRoutHandler interface {
+	HandleGroupEventRoutes(w http.ResponseWriter, r *http.Request, groupID, subpath string) bool
 }
 
 func NewHandler(db *sql.DB) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
 	return &Handler{service: service}
+}
+
+func (h *Handler) SetEventsHandler(fn EventsRoutHandler) {
+	h.eventshandler = fn
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -101,6 +111,9 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.listMembers(w, r, groupID)
+	case "events":
+		sub := p.Join(parts...)
+		h.eventshandler.HandleGroupEventRoutes(w, r, groupID, sub)
 	default:
 		http.NotFound(w, r)
 	}

@@ -8,6 +8,7 @@ import (
 	"social-network/backend/pkg/auth"
 	"social-network/backend/pkg/comments"
 	"social-network/backend/pkg/db/sqlite"
+	"social-network/backend/pkg/events"
 	"social-network/backend/pkg/followers"
 	"social-network/backend/pkg/groups"
 	"social-network/backend/pkg/posts"
@@ -55,10 +56,13 @@ func main() {
 	commentsHandler := comments.NewHandler(db, uploadDir)
 	postsHandler.SetCommentsHandler(commentsHandler)
 
+	//Events 
+	eventsHandler := events.NewHandler(db)
+
 	// Groups
 	groupsHandler := groups.NewHandler(db)
 	groupsHandler.RegisterRoutes(mux)
-
+	groupsHandler.SetEventsHandler(eventsHandler)
 	// Group posts (members viewing posts within a group)
 	// Route: GET /groups/{id}/posts  — handled inside groupsHandler
 	// Group events
