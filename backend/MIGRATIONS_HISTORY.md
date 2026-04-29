@@ -6,7 +6,7 @@ Migration location:
 - `backend/pkg/db/migrations/sqlite`
 
 Execution order:
-- migrations are run in filename order (from `000001` to `000012`) in `backend/server.go` via `sqlite.RunMigrations(...)`.
+- migrations are run in filename order (from `000001` to `000014`) in `backend/server.go` via `sqlite.RunMigrations(...)`.
 
 ## Timeline
 
@@ -152,12 +152,8 @@ Main changes:
 - Adds nullable `group_id` column to `posts` referencing `groups(id)`.
 - Adds index `idx_posts_group_id`.
 
-Important note:
-- This migration appears before groups tables are created. SQLite allows this schema declaration, and the group tables arrive in later migrations.
-
 Down migration:
 - Rebuilds `posts` table without `group_id` (SQLite cannot simply drop a column).
-- Steps: create backup table -> copy data -> drop old table -> rename backup -> recreate index.
 
 ### 000011_create_groups_tables
 
@@ -165,11 +161,8 @@ Purpose:
 - Introduce base group entities.
 
 Main changes:
-- Creates `groups` with basic fields:
-  - `id`, `created_at`
-- Creates `group_members` join table:
-  - `group_id`, `user_id` (composite PK)
-  - FK to `groups` and `users`
+- Creates `groups` with basic fields: `id`, `created_at`
+- Creates `group_members` join table
 - Adds index `idx_group_members_user_id`.
 
 Down migration:
@@ -181,18 +174,50 @@ Purpose:
 - Complete groups feature with metadata, roles, join requests, and invitations.
 
 Main changes:
-- Extends `groups`:
-  - adds `title`, `group_description`, `creator_id` (FK users)
-  - adds index `idx_groups_creator_id`
-- Extends `group_members`:
-  - adds `member_role` (`creator|member`)
-  - adds `joined_at`
-- Creates `group_join_requests` table + status indexes.
-- Creates `group_invitations` table + status indexes.
+- Extends `groups`: adds `title`, `group_description`, `creator_id`
+- Extends `group_members`: adds `member_role`, `joined_at`
+- Creates `group_join_requests` table + status indexes
+- Creates `group_invitations` table + status indexes
 
 Down migration:
-- Drops invitation/request tables and indexes.
-- Rebuilds `group_members` and `groups` to their old minimal schema (without new columns), preserving base data.
+- Drops invitation/request tables and rebuilds base tables.
+
+### 000013_create_group_events_tables
+
+Purpose:
+- Add group events with RSVP support.
+
+Main changes:
+- Creates `group_events` table:
+  - `id`, `group_id` (FK groups), `creator_id` (FK users)
+  - `title`, `description`, `event_time`
+  - `created_at`
+- Adds index `idx_group_events_group_id`
+- Creates `event_responses` join table:
+  - `event_id`, `user_id` (composite PK)
+  - `response` (`going|not_going`)
+  - `responded_at`
+
+Down migration:
+- Drops `event_responses` and `group_events`.
+
+### 000014_create_chat_messages_table
+
+Purpose:
+- Add persistent chat messages for both private and group conversations.
+
+Main changes:
+- Creates `chat_messages` table:
+  - `id` (PK), `chat_id`, `chat_type` (`private|group`), `sender_id` (FK users), `body`, `created_at`
+  - `chat_id` is a universal conversation key:
+    - **Private**: `"private:<sorted_uid1>:<sorted_uid2>"` — deterministic from the two participants
+    - **Group**: the group's UUID directly
+  - No FK on `chat_id` — it's a logical key, not a DB-level reference
+- Adds index `idx_chat_messages_chat` on `(chat_id, created_at)` for history queries
+- Adds index `idx_chat_messages_sender` on `sender_id`
+
+Down migration:
+- Drops both indexes and the `chat_messages` table.
 
 ## Evolution by Feature
 
@@ -218,3 +243,8 @@ Down migration:
 - `000011` base groups/group_members
 - `000012` full groups schema (creator metadata, roles, requests, invitations)
 
+6. Group events:
+- `000013` group events + RSVP responses
+
+7. Real-time chat:
+- `000014` chat messages (private + group, unified schema)
