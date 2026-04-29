@@ -101,7 +101,7 @@ Note:
 - `server.go` comments mention group posts/events, but those routes are not present in current `groups` handler code.
 
 ### Other server-level routes
-
+handleGroupRoutes
 - `GET /health` -> inline handler in `server.go`
 - `GET /uploads/*` -> static file handler from `users.ServeUploads(uploadDir)`
 
