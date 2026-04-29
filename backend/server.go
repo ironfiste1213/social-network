@@ -63,6 +63,7 @@ func main() {
 	groupsHandler := groups.NewHandler(db)
 	groupsHandler.RegisterRoutes(mux)
 	groupsHandler.SetEventsHandler(eventsHandler)
+	groupsHandler.SetPostsHandler(postsHandler)
 	// Group posts (members viewing posts within a group)
 	// Route: GET /groups/{id}/posts  — handled inside groupsHandler
 	// Group events

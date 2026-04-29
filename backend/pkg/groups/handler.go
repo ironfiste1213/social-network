@@ -10,20 +10,26 @@ import (
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
 )
-
 type Handler struct {
-	service       *Service
-	eventshandler EventsRoutHandler
+    service       *Service
+    eventshandler EventsRoutHandler
+    postshandler  PostsRouteHandler   
 }
 
 type EventsRoutHandler interface {
 	HandleGroupEventRoutes(w http.ResponseWriter, r *http.Request, groupID, subpath string) bool
+}
+type PostsRouteHandler interface {
+    HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, groupID, sub string) bool
 }
 
 func NewHandler(db *sql.DB) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
 	return &Handler{service: service}
+}
+func (h *Handler) SetPostsHandler(fn PostsRouteHandler) {
+    h.postshandler = fn
 }
 
 func (h *Handler) SetEventsHandler(fn EventsRoutHandler) {
@@ -110,6 +116,12 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.listMembers(w, r, groupID)
+	case "posts":
+        if h.postshandler == nil {
+           http.NotFound(w, r)
+           return
+        }
+        h.postshandler.HandleGroupPostRoutes(w, r, groupID, "posts")	
 	case "events":
 		sub := strings.Join(parts[1:], "/")
 		h.eventshandler.HandleGroupEventRoutes(w, r, groupID, sub)

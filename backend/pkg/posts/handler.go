@@ -42,6 +42,34 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) SetCommentsHandler(handler PostSubrouteHandler) {
 	h.comments = handler
 }
+func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, groupID, sub string) bool {
+    if sub != "posts" {
+        return false
+    }
+    if r.Method != http.MethodGet {
+        response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+        return true
+    }
+    h.getGroupPosts(w, r, groupID)
+    return true
+}
+
+func (h *Handler) getGroupPosts(w http.ResponseWriter, r *http.Request, groupID string) {
+    viewerID, ok := h.authenticate(w, r)
+    if !ok {
+        return
+    }
+    limit, offset := parsePagination(r)
+    posts, err := h.service.GetGroupPosts(r.Context(), groupID, viewerID, limit, offset)
+    if err != nil {
+        response.Error(w, http.StatusInternalServerError, "failed to get group posts")
+        return
+    }
+    if posts == nil {
+        posts = []Post{}
+    }
+    response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
+}
 
 // POST /posts         — create
 // GET  /posts         — feed
