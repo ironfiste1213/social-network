@@ -1,10 +1,66 @@
 package chat
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 )
+
 // otherUserFromChatID extracts the other participant's ID from a private chat_id.
+
+var (
+	ErrForbidden          = errors.New("forbidden")
+	ErrInvalidInput       = errors.New("invalid input")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+)
+
+type Service struct {
+	repo *Repository
+	hub  *Hub
+}
+
+func NewService(repo *Repository, hub *Hub) *Service {
+	return &Service{repo: repo, hub: hub}
+}
+
+// HandlePrivateMessage validates and delivers a private chat message.
+func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
+	ctx := context.Background()
+
+	if strings.TrimSpace(event.Body) == "" || event.To == "" {
+		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
+		return
+	}
+	if event.To == c.userID {
+		c.send <- OutboundEvent{Type: "error", Error: "cannot message yourself"}
+		return
+	}
+
+	allowed, err := s.repo.CanChatPrivate(ctx, c.userID, event.To)
+	if err != nil {
+		fmt.Printf("[CHAT][SERVICE] CanChatPrivate error: %v\n", err)
+		c.send <- OutboundEvent{Type: "error", Error: "internal error"}
+		return
+	}
+	if !allowed {
+		c.send <- OutboundEvent{Type: "error", Error: "not allowed to message this user"}
+		return
+	}
+
+	chatID := PrivateChatID(c.userID, event.To)
+	msg, err := s.repo.SaveMessage(ctx, chatID, "private", c.userID, strings.TrimSpace(event.Body))
+	if err != nil {
+		fmt.Printf("[CHAT][SERVICE] SaveMessage error: %v\n", err)
+		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
+		return
+	}
+
+	out := OutboundEvent{Type: "message", Payload: &msg}
+	// deliver to both sender and recipient (sender sees their own message confirmed)
+	s.hub.Send([]string{c.userID, event.To}, out)
+}
 
 func otherUserFromChatID(chatID, myID string) string {
 	trimmed := strings.TrimPrefix(chatID, "private:")
@@ -17,7 +73,7 @@ func otherUserFromChatID(chatID, myID string) string {
 	}
 	return parts[0]
 }
- 
+
 // PrivateChatID creates a deterministic chat ID for two users.
 // Format: "private:<lower_id>:<higher_id>"
 func PrivateChatID(a, b string) string {

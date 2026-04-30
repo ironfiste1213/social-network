@@ -1,6 +1,8 @@
 package chat
 
-import "time"
+import (
+	"time"
+)
 
 // ---- DB model ----
 
@@ -45,7 +47,7 @@ type InboundEvent struct {
 
 // OutboundEvent: server → client
 type OutboundEvent struct {
-	Type    string   `json:"type"`    // "message" | "error" | "pong"
+	Type    string   `json:"type"` // "message" | "error" | "pong"
 	Payload *Message `json:"payload,omitempty"`
 	Error   string   `json:"error,omitempty"`
 }
