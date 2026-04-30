@@ -119,6 +119,8 @@ func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID  string, l
 		ORDER BY m.created_at DESC
 		LIMIT ?;
 	`, chatID, limit)
+	}else {
+		
 	}
 	
 	if err != nil {
