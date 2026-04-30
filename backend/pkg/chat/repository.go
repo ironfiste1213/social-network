@@ -120,7 +120,16 @@ func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID  string, l
 		LIMIT ?;
 	`, chatID, limit)
 	}else {
-		
+		rows, err = r.db.QueryContext(ctx, `
+		SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
+		      u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
+		FROM chat_messages m
+		JOIN users u ON u.id = m.sender_id
+		WHERE m.chat_id = ?
+		AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = ?)
+		ORDER BY m.created_at DESC
+		LIMIT ?;
+		`, chatID, beforeID, limit)
 	}
 	
 	if err != nil {
