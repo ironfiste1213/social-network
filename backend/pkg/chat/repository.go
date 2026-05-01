@@ -161,3 +161,16 @@ func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID  string, l
 	}
 	return msgs, nil
 }
+
+
+// GetUserBySessionID resolves a session cookie to a user ID.
+func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (string, error) {
+	var userID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP;
+	`, sessionID).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errors.New("invalid session")
+	}
+	return userID, err
+}

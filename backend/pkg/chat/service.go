@@ -81,3 +81,41 @@ func PrivateChatID(a, b string) string {
 	sort.Strings(ids)
 	return "private:" + ids[0] + ":" + ids[1]
 }
+
+
+// HandleGroupMessage validates and delivers a group chat message.
+func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
+	ctx := context.Background()
+
+	if strings.TrimSpace(event.Body) == "" || event.To == "" {
+		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
+		return
+	}
+
+	isMember, err := s.repo.IsGroupMember(ctx, event.To, c.userID)
+	if err != nil {
+		fmt.Printf("[CHAT][SERVICE] IsGroupMember error: %v\n", err)
+		c.send <- OutboundEvent{Type: "error", Error: "internal error"}
+		return
+	}
+	if !isMember {
+		c.send <- OutboundEvent{Type: "error", Error: "not a member of this group"}
+		return
+	}
+
+	msg, err := s.repo.SaveMessage(ctx, event.To, "group", c.userID, strings.TrimSpace(event.Body))
+	if err != nil {
+		fmt.Printf("[CHAT][SERVICE] SaveMessage error: %v\n", err)
+		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
+		return
+	}
+
+	memberIDs, err := s.repo.GetGroupMemberIDs(ctx, event.To)
+	if err != nil {
+		fmt.Printf("[CHAT][SERVICE] GetGroupMemberIDs error: %v\n", err)
+		return
+	}
+
+	out := OutboundEvent{Type: "message", Payload: &msg}
+	s.hub.Send(memberIDs, out)
+}
