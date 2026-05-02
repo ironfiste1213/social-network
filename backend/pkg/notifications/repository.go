@@ -52,6 +52,7 @@ func (r *Repository) MarkRead(ctx context.Context, notifID, userID string) error
 	)
 	return err
 }
+
 // Create inserts a notification. refID ties it to the actionable item.
 func (r *Repository) Create(ctx context.Context, userID, notifType, refID, actorID, groupID, eventID string) error {
 	_, err := r.db.ExecContext(ctx, `
