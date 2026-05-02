@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -17,8 +19,37 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// CanChatPrivate returns true if at least one user follows the other.
-// Per spec: "at least one of the users must be following the other."
+func (r *Repository) getUserBySessionID(ctx context.Context, sessionID string) (string, error) {
+	var userID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP;`,
+		sessionID,
+	).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errors.New("invalid session")
+	}
+	return userID, err
+}
+
+// privateChatID is internal — never exposed to frontend.
+func (r *Repository) privateChatID(a, b string) string {
+	ids := []string{a, b}
+	sort.Strings(ids)
+	return "private:" + ids[0] + ":" + ids[1]
+}
+
+func otherUserFromChatID(chatID, myID string) string {
+	trimmed := strings.TrimPrefix(chatID, "private:")
+	parts := strings.SplitN(trimmed, ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	if parts[0] == myID {
+		return parts[1]
+	}
+	return parts[0]
+}
+
 func (r *Repository) CanChatPrivate(ctx context.Context, senderID, receiverID string) (bool, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `
@@ -32,7 +63,6 @@ func (r *Repository) CanChatPrivate(ctx context.Context, senderID, receiverID st
 	return count > 0, nil
 }
 
-// IsGroupMember returns true if userID is a member of groupID.
 func (r *Repository) IsGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `
@@ -41,7 +71,6 @@ func (r *Repository) IsGroupMember(ctx context.Context, groupID, userID string) 
 	return count > 0, err
 }
 
-// GetGroupMemberIDs returns all member user IDs for a group.
 func (r *Repository) GetGroupMemberIDs(ctx context.Context, groupID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT user_id FROM group_members WHERE group_id = ?;`, groupID)
@@ -60,9 +89,16 @@ func (r *Repository) GetGroupMemberIDs(ctx context.Context, groupID string) ([]s
 	return ids, rows.Err()
 }
 
-// ---- message persistence ----
+func (r *Repository) SavePrivateMessage(ctx context.Context, senderID, receiverID, body string) (Message, error) {
+	chatID := r.privateChatID(senderID, receiverID)
+	return r.saveMessage(ctx, chatID, "private", senderID, body)
+}
 
-func (r *Repository) SaveMessage(ctx context.Context, chatID, chatType, senderID, body string) (Message, error) {
+func (r *Repository) SaveGroupMessage(ctx context.Context, groupID, senderID, body string) (Message, error) {
+	return r.saveMessage(ctx, groupID, "group", senderID, body)
+}
+
+func (r *Repository) saveMessage(ctx context.Context, chatID, chatType, senderID, body string) (Message, error) {
 	id := uuid.NewString()
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO chat_messages (id, chat_id, chat_type, sender_id, body)
@@ -71,12 +107,14 @@ func (r *Repository) SaveMessage(ctx context.Context, chatID, chatType, senderID
 	if err != nil {
 		return Message{}, fmt.Errorf("save message: %w", err)
 	}
-	return r.GetMessageByID(ctx, id)
+	return r.getMessageByID(ctx, id)
 }
 
-func (r *Repository) GetMessageByID(ctx context.Context, id string) (Message, error) {
+func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, error) {
 	var m Message
 	var sender UserInfo
+	// chat_id is selected but only used internally — not part of Message struct
+	var chatID string
 	err := r.db.QueryRowContext(ctx, `
 		SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
@@ -84,7 +122,7 @@ func (r *Repository) GetMessageByID(ctx context.Context, id string) (Message, er
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.id = ?;
 	`, id).Scan(
-		&m.ID, &m.ChatID, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
+		&m.ID, &chatID, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
 		&sender.FirstName, &sender.LastName, &sender.Nickname, &sender.AvatarPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -98,51 +136,50 @@ func (r *Repository) GetMessageByID(ctx context.Context, id string) (Message, er
 	return m, nil
 }
 
-
-// GetHistory returns the last `limit` messages for a chat, oldest-first.
-func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID  string, limit int) ([]Message, error) {
-	if limit <= 0 || limit > 50 {
-		limit = 20
+func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID string, limit int) ([]Message, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
 	}
 
 	var (
 		rows *sql.Rows
-		err error
+		err  error
 	)
+
 	if beforeID == "" {
 		rows, err = r.db.QueryContext(ctx, `
-		SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
-		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
-		FROM chat_messages m
-		JOIN users u ON u.id = m.sender_id
-		WHERE m.chat_id = ?
-		ORDER BY m.created_at DESC
-		LIMIT ?;
-	`, chatID, limit)
-	}else {
+			SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
+			       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
+			FROM chat_messages m
+			JOIN users u ON u.id = m.sender_id
+			WHERE m.chat_id = ?
+			ORDER BY m.created_at DESC
+			LIMIT ?;
+		`, chatID, limit)
+	} else {
 		rows, err = r.db.QueryContext(ctx, `
-		SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
-		      u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
-		FROM chat_messages m
-		JOIN users u ON u.id = m.sender_id
-		WHERE m.chat_id = ?
-		AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = ?)
-		ORDER BY m.created_at DESC
-		LIMIT ?;
+			SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
+			       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
+			FROM chat_messages m
+			JOIN users u ON u.id = m.sender_id
+			WHERE m.chat_id = ?
+			  AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = ?)
+			ORDER BY m.created_at DESC
+			LIMIT ?;
 		`, chatID, beforeID, limit)
 	}
-	
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
- 
+
 	var msgs []Message
 	for rows.Next() {
 		var m Message
 		var sender UserInfo
+		var chatIDScanned string // scanned but not put in Message
 		if err := rows.Scan(
-			&m.ID, &m.ChatID, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
+			&m.ID, &chatIDScanned, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
 			&sender.FirstName, &sender.LastName, &sender.Nickname, &sender.AvatarPath,
 		); err != nil {
 			return nil, err
@@ -154,23 +191,70 @@ func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID  string, l
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
- 
-	// reverse to get oldest-first
+
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
 	return msgs, nil
 }
 
-
-// GetUserBySessionID resolves a session cookie to a user ID.
-func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (string, error) {
-	var userID string
-	err := r.db.QueryRowContext(ctx, `
-		SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP;
-	`, sessionID).Scan(&userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", errors.New("invalid session")
+func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Conversation, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT m.chat_id, m.chat_type, m.body, m.created_at
+		FROM chat_messages m
+		INNER JOIN (
+			SELECT chat_id, MAX(created_at) AS latest
+			FROM chat_messages
+			WHERE sender_id = ?
+			   OR (chat_type = 'private' AND chat_id LIKE '%' || ? || '%')
+			GROUP BY chat_id
+		) l ON m.chat_id = l.chat_id AND m.created_at = l.latest
+		ORDER BY m.created_at DESC;
+	`, userID, userID)
+	if err != nil {
+		return nil, err
 	}
-	return userID, err
+	defer rows.Close()
+
+	var convos []Conversation
+	for rows.Next() {
+		var chatID, chatType, lastMsg string
+		var lastAt interface{}
+		if err := rows.Scan(&chatID, &chatType, &lastMsg, &lastAt); err != nil {
+			return nil, err
+		}
+
+		c := Conversation{
+			ChatType:    chatType,
+			LastMessage: lastMsg,
+		}
+		if t, ok := lastAt.(string); ok {
+			// parse time — SQLite returns strings
+			_ = t
+		}
+
+		if chatType == "group" {
+			var title string
+			_ = r.db.QueryRowContext(ctx,
+				`SELECT title FROM groups WHERE id = ?;`, chatID,
+			).Scan(&title)
+			// frontend uses group_id to fetch history — safe to expose
+			c.GroupID = chatID
+			c.GroupTitle = title
+		} else {
+			// derive the other user — chat_id stays internal
+			otherID := otherUserFromChatID(chatID, userID)
+			if otherID != "" {
+				var p UserInfo
+				_ = r.db.QueryRowContext(ctx, `
+					SELECT id, first_name, last_name,
+					       COALESCE(nickname,''), COALESCE(avatar_path,'')
+					FROM users WHERE id = ?;
+				`, otherID).Scan(&p.ID, &p.FirstName, &p.LastName, &p.Nickname, &p.AvatarPath)
+				c.Participant = &p
+			}
+		}
+		convos = append(convos, c)
+	}
+	return convos, rows.Err()
 }

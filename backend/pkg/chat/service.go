@@ -4,15 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 )
 
-// otherUserFromChatID extracts the other participant's ID from a private chat_id.
-
 var (
 	ErrForbidden          = errors.New("forbidden")
-	ErrInvalidInput       = errors.New("invalid input")
 	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
@@ -25,11 +21,18 @@ func NewService(repo *Repository, hub *Hub) *Service {
 	return &Service{repo: repo, hub: hub}
 }
 
-// HandlePrivateMessage validates and delivers a private chat message.
+func (s *Service) CurrentUserID(ctx context.Context, sessionID string) (string, error) {
+	if sessionID == "" {
+		return "", ErrInvalidCredentials
+	}
+	return s.repo.getUserBySessionID(ctx, sessionID)
+}
+
+// HandlePrivateMessage — senderID from auth, chat_id generated in repo.
 func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
 	ctx := context.Background()
 
-	if strings.TrimSpace(event.Body) == "" || event.To == "" {
+	if strings.TrimSpace(event.Body) == "" || strings.TrimSpace(event.To) == "" {
 		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
 		return
 	}
@@ -49,45 +52,21 @@ func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	chatID := PrivateChatID(c.userID, event.To)
-	msg, err := s.repo.SaveMessage(ctx, chatID, "private", c.userID, strings.TrimSpace(event.Body))
+	msg, err := s.repo.SavePrivateMessage(ctx, c.userID, event.To, strings.TrimSpace(event.Body))
 	if err != nil {
-		fmt.Printf("[CHAT][SERVICE] SaveMessage error: %v\n", err)
+		fmt.Printf("[CHAT][SERVICE] SavePrivateMessage error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
 		return
 	}
 
-	out := OutboundEvent{Type: "message", Payload: &msg}
-	// deliver to both sender and recipient (sender sees their own message confirmed)
-	s.hub.Send([]string{c.userID, event.To}, out)
+	s.hub.Send([]string{c.userID, event.To}, OutboundEvent{Type: "message", Payload: &msg})
 }
 
-func otherUserFromChatID(chatID, myID string) string {
-	trimmed := strings.TrimPrefix(chatID, "private:")
-	parts := strings.SplitN(trimmed, ":", 2)
-	if len(parts) != 2 {
-		return ""
-	}
-	if parts[0] == myID {
-		return parts[1]
-	}
-	return parts[0]
-}
-
-// PrivateChatID creates a deterministic chat ID for two users.
-// Format: "private:<lower_id>:<higher_id>"
-func PrivateChatID(a, b string) string {
-	ids := []string{a, b}
-	sort.Strings(ids)
-	return "private:" + ids[0] + ":" + ids[1]
-}
-
-
-// HandleGroupMessage validates and delivers a group chat message.
+// HandleGroupMessage — senderID from auth, chat_id = groupID assigned in repo.
 func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
 	ctx := context.Background()
 
-	if strings.TrimSpace(event.Body) == "" || event.To == "" {
+	if strings.TrimSpace(event.Body) == "" || strings.TrimSpace(event.To) == "" {
 		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
 		return
 	}
@@ -103,9 +82,9 @@ func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	msg, err := s.repo.SaveMessage(ctx, event.To, "group", c.userID, strings.TrimSpace(event.Body))
+	msg, err := s.repo.SaveGroupMessage(ctx, event.To, c.userID, strings.TrimSpace(event.Body))
 	if err != nil {
-		fmt.Printf("[CHAT][SERVICE] SaveMessage error: %v\n", err)
+		fmt.Printf("[CHAT][SERVICE] SaveGroupMessage error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
 		return
 	}
@@ -116,6 +95,37 @@ func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	out := OutboundEvent{Type: "message", Payload: &msg}
-	s.hub.Send(memberIDs, out)
+	s.hub.Send(memberIDs, OutboundEvent{Type: "message", Payload: &msg})
+}
+
+// GetPrivateHistory — backend derives chat_id from senderID+receiverID.
+// Frontend only knows receiver_id.
+func (s *Service) GetPrivateHistory(ctx context.Context, senderID, receiverID, beforeID string, limit int) ([]Message, error) {
+	allowed, err := s.repo.CanChatPrivate(ctx, senderID, receiverID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrForbidden
+	}
+	chatID := s.repo.privateChatID(senderID, receiverID)
+	return s.repo.GetHistory(ctx, chatID, beforeID, limit)
+}
+
+// GetGroupHistory — backend uses groupID as chat_id.
+// Frontend only knows group_id.
+func (s *Service) GetGroupHistory(ctx context.Context, groupID, requesterID, beforeID string, limit int) ([]Message, error) {
+	isMember, err := s.repo.IsGroupMember(ctx, groupID, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	if !isMember {
+		return nil, ErrForbidden
+	}
+	return s.repo.GetHistory(ctx, groupID, beforeID, limit)
+}
+
+// GetConversations returns all conversations the user participated in.
+func (s *Service) GetConversations(ctx context.Context, userID string) ([]Conversation, error) {
+	return s.repo.GetConversations(ctx, userID)
 }

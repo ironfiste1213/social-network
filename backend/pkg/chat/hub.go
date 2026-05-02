@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Hub maintains the set of active WebSocket clients and broadcasts messages.
-// A user can have multiple simultaneous connections (multiple tabs).
+// Hub holds all active WebSocket clients.
+// A user can have multiple connections (multiple tabs).
 type Hub struct {
 	clients    map[string][]*Client
 	register   chan *Client
@@ -29,6 +29,7 @@ func NewHub() *Hub {
 	}
 }
 
+// Run must be called in its own goroutine.
 func (h *Hub) Run() {
 	fmt.Println("[CHAT][HUB] started")
 	for {
@@ -36,9 +37,8 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.userID] = append(h.clients[client.userID], client)
-			total := len(h.clients[client.userID])
+			fmt.Printf("[CHAT][HUB] user %s connected (connections=%d)\n", client.userID, len(h.clients[client.userID]))
 			h.mu.Unlock()
-			fmt.Printf("[CHAT][HUB] registered user %s (connections=%d)\n", client.userID, total)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -53,8 +53,8 @@ func (h *Hub) Run() {
 			if len(h.clients[client.userID]) == 0 {
 				delete(h.clients, client.userID)
 			}
+			fmt.Printf("[CHAT][HUB] user %s disconnected\n", client.userID)
 			h.mu.Unlock()
-			fmt.Printf("[CHAT][HUB] unregistered connection for user %s\n", client.userID)
 
 		case msg := <-h.broadcast:
 			h.mu.RLock()
