@@ -6,11 +6,13 @@ import (
 	"os"
 
 	"social-network/backend/pkg/auth"
+	"social-network/backend/pkg/chat"
 	"social-network/backend/pkg/comments"
 	"social-network/backend/pkg/db/sqlite"
 	"social-network/backend/pkg/events"
 	"social-network/backend/pkg/followers"
 	"social-network/backend/pkg/groups"
+	"social-network/backend/pkg/notifications"
 	"social-network/backend/pkg/posts"
 	"social-network/backend/pkg/users"
 )
@@ -56,7 +58,7 @@ func main() {
 	commentsHandler := comments.NewHandler(db, uploadDir)
 	postsHandler.SetCommentsHandler(commentsHandler)
 
-	//Events 
+	// Events
 	eventsHandler := events.NewHandler(db)
 
 	// Groups
@@ -64,6 +66,17 @@ func main() {
 	groupsHandler.RegisterRoutes(mux)
 	groupsHandler.SetEventsHandler(eventsHandler)
 	groupsHandler.SetPostsHandler(postsHandler)
+
+	// Notifications
+	notificationsHandler := notifications.NewHandler(db)
+	notificationsHandler.RegisterRoutes(mux)
+
+	// Chat WebSocket
+	hub := chat.NewHub()
+	go hub.Run()
+	chatHandler := chat.NewHandler(db, hub)
+	chatHandler.RegisterRoutes(mux)
+
 	// Group posts (members viewing posts within a group)
 	// Route: GET /groups/{id}/posts  — handled inside groupsHandler
 	// Group events
