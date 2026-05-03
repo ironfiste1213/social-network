@@ -89,3 +89,11 @@ func (h *Handler) handleActions(w http.ResponseWriter, r *http.Request) {
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
+
+func NewServiceFromDB(db *sql.DB) *Service {
+	return NewService(NewRepository(db))
+}
+
+func NewHandlerWithService(db *sql.DB, svc *Service) *Handler {
+	return &Handler{service: svc}
+}

@@ -1,17 +1,25 @@
 package followers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
-	"strings"
 )
 
 type Handler struct {
-	service *Service
+	service      *Service
+	notifService NotifService // add this
+}
+
+// Add interface
+type NotifService interface {
+	NotifyFollowRequest(ctx context.Context, recipientID, actorID, followRequestID string) error
 }
 
 var ErrUserNotFound = errors.New("user not found")

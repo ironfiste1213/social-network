@@ -1,3 +1,4 @@
+// backend/server.go — complete replacement
 package main
 
 import (
@@ -18,10 +19,10 @@ import (
 )
 
 func main() {
-	dbPath := getenv("SQLITE_PATH", "./social-network.db")
-	addr := getenv("APP_ADDR", ":8080")
+	dbPath        := getenv("SQLITE_PATH",      "./social-network.db")
+	addr          := getenv("APP_ADDR",         ":8080")
 	frontendOrigin := getenv("FRONTEND_ORIGIN", "http://localhost:3000")
-	uploadDir := getenv("UPLOAD_DIR", "./uploads")
+	uploadDir     := getenv("UPLOAD_DIR",       "./uploads")
 
 	db, err := sqlite.New(dbPath)
 	if err != nil {
@@ -35,56 +36,58 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Auth
+	// ── Auth ──────────────────────────────────────────────
 	authHandler := auth.NewHandler(db)
 	authHandler.RegisterRoutes(mux)
 
-	// Users
+	// ── Users ─────────────────────────────────────────────
 	usersHandler := users.NewHandler(db, uploadDir)
 	usersHandler.RegisterRoutes(mux)
 
-	// Followers
+	// ── Followers ─────────────────────────────────────────
 	followersHandler := followers.NewHandler(db)
 	followersHandler.RegisterRoutes(mux)
 	usersHandler.SetFollowersHandler(followersHandler)
 
-	// Posts
+	// ── Notifications ─────────────────────────────────────
+	// Must be created before followers/groups/events
+	// so we can pass it as a dependency
+	notifService := notifications.NewServiceFromDB(db)
+    notifHandler := notifications.NewHandlerWithService(db, notifService)
+    notifHandler.RegisterRoutes(mux)
+
+	// ── Posts ─────────────────────────────────────────────
 	postsHandler := posts.NewHandler(db, uploadDir)
 	postsHandler.RegisterRoutes(mux)
 	usersHandler.SetPostsHandler(postsHandler)
 	mux.HandleFunc("/posts/my-followers", postsHandler.GetMyFollowers)
 
-	// Comments
+	// ── Comments ──────────────────────────────────────────
 	commentsHandler := comments.NewHandler(db, uploadDir)
 	postsHandler.SetCommentsHandler(commentsHandler)
 
-	// Events
-	eventsHandler := events.NewHandler(db)
+	// ── Events ────────────────────────────────────────────
+	eventsHandler := events.NewHandler(db, notifService)
 
-	// Groups
-	groupsHandler := groups.NewHandler(db)
+	// ── Groups ────────────────────────────────────────────
+	groupsHandler := groups.NewHandler(db, notifService)
 	groupsHandler.RegisterRoutes(mux)
 	groupsHandler.SetEventsHandler(eventsHandler)
 	groupsHandler.SetPostsHandler(postsHandler)
 
-	// Notifications
-	notificationsHandler := notifications.NewHandler(db)
-	notificationsHandler.RegisterRoutes(mux)
+	// Wire notif service into followers handler
+	followersHandler.SetNotifService(notifService)
 
-	// Chat WebSocket
+	// ── Chat ──────────────────────────────────────────────
 	hub := chat.NewHub()
-	go hub.Run()
+	go hub.Run() // must run in background goroutine
 	chatHandler := chat.NewHandler(db, hub)
 	chatHandler.RegisterRoutes(mux)
 
-	// Group posts (members viewing posts within a group)
-	// Route: GET /groups/{id}/posts  — handled inside groupsHandler
-	// Group events
-	// Route: POST /groups/{id}/events, GET /groups/{id}/events, etc. — handled inside groupsHandler
-
-	// Static uploads
+	// ── Static uploads ────────────────────────────────────
 	mux.Handle("/uploads/", users.ServeUploads(uploadDir))
 
+	// ── Health ────────────────────────────────────────────
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -100,25 +103,23 @@ func main() {
 	}
 }
 
-func withCORS(frontendOrigin string, next http.Handler) http.Handler {
+func withCORS(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", frontendOrigin)
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
 
 func getenv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
 	return fallback
 }
