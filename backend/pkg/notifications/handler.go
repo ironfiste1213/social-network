@@ -24,6 +24,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/notifications/", h.handleActions)
 }
 
+
 // GET /notifications — returns all notifications + unread count
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

@@ -53,8 +53,8 @@ func main() {
 	// Must be created before followers/groups/events
 	// so we can pass it as a dependency
 	notifService := notifications.NewServiceFromDB(db)
-    notifHandler := notifications.NewHandlerWithService(db, notifService)
-    notifHandler.RegisterRoutes(mux)
+	notifHandler := notifications.NewHandlerWithService(db, notifService)
+	notifHandler.RegisterRoutes(mux)
 
 	// ── Posts ─────────────────────────────────────────────
 	postsHandler := posts.NewHandler(db, uploadDir)
