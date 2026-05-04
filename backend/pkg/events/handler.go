@@ -1,19 +1,29 @@
 package events
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
-	"strings"
 )
 
 type Handler struct {
-	service *Service
-   notifService NotifService 
-
+	service      *Service
+	notifService NotifService
+}
+type NotifService interface {
+	NotifyGroupEvent(
+		ctx context.Context,
+		memberIDs []string,
+		actorID string,
+		groupID string,
+		eventID string,
+	) error
 }
 
 func NewHandler(db *sql.DB) *Handler {

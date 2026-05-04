@@ -224,9 +224,6 @@ func (r *Repository) GetPendingInvitation(ctx context.Context, groupID, userID s
 	return invitationID, err == nil, err
 }
 
-
-
-
 func (r *Repository) CreateJoinRequest(ctx context.Context, groupID, userID string) (GroupJoinRequest, error) {
 	id := uuid.NewString()
 
@@ -278,7 +275,6 @@ func (r *Repository) GetJoinRequestByID(ctx context.Context, requestID string) (
 	return req, nil
 }
 
-
 func (r *Repository) ListPendingJoinRequests(ctx context.Context, groupID string) ([]GroupJoinRequest, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT gjr.id,
@@ -320,7 +316,6 @@ func (r *Repository) ListPendingJoinRequests(ctx context.Context, groupID string
 	return requests, rows.Err()
 }
 
-
 func (r *Repository) GetJoinRequestTarget(ctx context.Context, requestID string) (groupID, userID string, err error) {
 	err = r.db.QueryRowContext(ctx, `
 		SELECT group_id, user_id
@@ -332,7 +327,6 @@ func (r *Repository) GetJoinRequestTarget(ctx context.Context, requestID string)
 	}
 	return groupID, userID, err
 }
-
 
 func (r *Repository) AcceptJoinRequest(ctx context.Context, requestID string) error {
 	groupID, userID, err := r.GetJoinRequestTarget(ctx, requestID)
@@ -392,7 +386,6 @@ func (r *Repository) DeclineJoinRequest(ctx context.Context, requestID string) e
 	return nil
 }
 
-
 func (r *Repository) CreateInvitation(ctx context.Context, groupID, inviterID, inviteeID string) (GroupInvitation, error) {
 	id := uuid.NewString()
 
@@ -406,7 +399,6 @@ func (r *Repository) CreateInvitation(ctx context.Context, groupID, inviterID, i
 
 	return r.GetInvitationByID(ctx, id, inviteeID)
 }
-
 
 func (r *Repository) GetInvitationByID(ctx context.Context, invitationID, viewerID string) (GroupInvitation, error) {
 	var invitation GroupInvitation
@@ -535,8 +527,6 @@ func (r *Repository) ListPendingInvitations(ctx context.Context, inviteeID strin
 	return invitations, rows.Err()
 }
 
-
-
 func (r *Repository) GetInvitationTarget(ctx context.Context, invitationID string) (groupID, inviteeID string, err error) {
 	err = r.db.QueryRowContext(ctx, `
 		SELECT group_id, invitee_id
@@ -589,8 +579,6 @@ func (r *Repository) AcceptInvitation(ctx context.Context, invitationID string) 
 
 	return tx.Commit()
 }
-
-
 
 func (r *Repository) DeclineInvitation(ctx context.Context, invitationID string) error {
 	res, err := r.db.ExecContext(ctx, `
@@ -649,8 +637,6 @@ func (r *Repository) ListMembers(ctx context.Context, groupID string) ([]GroupMe
 
 	return members, rows.Err()
 }
-
-
 
 func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (string, error) {
 	var userID string

@@ -16,12 +16,14 @@ type Handler struct {
 	service      *Service
 	notifService NotifService 
 }
-
-
 type NotifService interface {
-	NotifyFollowRequest(ctx context.Context, recipientID, actorID, followRequestID string) error
+	NotifyFollowRequest(
+		ctx             context.Context,
+		recipientID     string,
+		actorID         string,
+		followRequestID string,
+	) error
 }
-
 var ErrUserNotFound = errors.New("user not found")
 
 func NewHandler(db *sql.DB, svc NotifService) *Handler {

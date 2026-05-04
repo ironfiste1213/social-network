@@ -235,6 +235,15 @@ func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID st
 		}
 		return
 	}
+	// Notify group creator
+	if h.notifService != nil {
+		group, err := h.service.GetGroup(r.Context(), groupID, userID)
+		if err == nil {
+			_ = h.notifService.NotifyGroupJoinRequest(
+				r.Context(), group.CreatorID, userID, groupID, request.ID,
+			)
+		}
+	}
 
 	response.JSON(w, http.StatusCreated, map[string]any{"request": request})
 }
@@ -327,6 +336,12 @@ func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID 
 			response.Error(w, http.StatusInternalServerError, "failed to invite user")
 		}
 		return
+	}
+	// Notify the invitee
+	if h.notifService != nil {
+		_ = h.notifService.NotifyGroupInvitation(
+			r.Context(), invitation.InviteeID, userID, groupID, invitation.ID,
+		)
 	}
 
 	response.JSON(w, http.StatusCreated, map[string]any{"invitation": invitation})
