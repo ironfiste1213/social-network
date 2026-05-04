@@ -77,7 +77,7 @@ func main() {
 	groupsHandler.SetPostsHandler(postsHandler)
 
 	// Wire notif service into followers handler
-	followersHandler.SetNotifService(notifService)
+	// !!!!!!!!!!!!! -----> followersHandler.SetNotifService(notifService)
 
 	// ── Chat ──────────────────────────────────────────────
 	hub := chat.NewHub()

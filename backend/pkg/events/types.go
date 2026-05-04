@@ -32,3 +32,9 @@ type CreateEventInput struct {
 type RespondEventInput struct {
 	Response string `json:"response"` // "going" | "not_going"
 }
+
+type GroupMember struct {
+	User     UserSummary `json:"user"`
+	Role     string      `json:"role"`
+	JoinedAt time.Time   `json:"joined_at"`
+}

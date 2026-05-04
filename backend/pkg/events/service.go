@@ -88,6 +88,9 @@ func (s *Service) Respond(ctx context.Context, groupID, eventID, userID, respons
 	return s.repo.GetEventByID(ctx, eventID, userID)
 }
 
+func (s *Service) GetGroupMemberIDs(ctx context.Context, groupID string) ([]string, error) {
+	return s.repo.GetGroupMemberIDs(ctx, groupID)
+}
 // CurrentUserID resolves a session ID to a user ID.
 func (s *Service) CurrentUserID(ctx context.Context, sessionID string) (string, error) {
 	if sessionID == "" {

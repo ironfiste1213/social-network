@@ -26,10 +26,10 @@ type NotifService interface {
 	) error
 }
 
-func NewHandler(db *sql.DB) *Handler {
+func NewHandler(db *sql.DB, svc NotifService) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
-	return &Handler{service: service}
+	return &Handler{service: service, notifService: svc}
 }
 
 // HandleGroupEventRoutes is called by the groups handler (or server) for sub-routes:
@@ -97,6 +97,14 @@ func (h *Handler) createEvent(w http.ResponseWriter, r *http.Request, groupID st
 			response.Error(w, http.StatusInternalServerError, "failed to create event")
 		}
 		return
+	}
+	if h.notifService != nil {
+		memberIDs, err := h.service.GetGroupMemberIDs(r.Context(), groupID)
+		if err == nil {
+			_ = h.notifService.NotifyGroupEvent(
+				r.Context(), memberIDs, userID, groupID, event.ID,
+			)
+		}
 	}
 
 	response.JSON(w, http.StatusCreated, map[string]any{"event": event})
