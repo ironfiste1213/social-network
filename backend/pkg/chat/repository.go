@@ -91,11 +91,21 @@ func (r *Repository) GetGroupMemberIDs(ctx context.Context, groupID string) ([]s
 
 func (r *Repository) SavePrivateMessage(ctx context.Context, senderID, receiverID, body string) (Message, error) {
 	chatID := r.privateChatID(senderID, receiverID)
-	return r.saveMessage(ctx, chatID, "private", senderID, body)
+	msg, err:= r.saveMessage(ctx, chatID, "private", senderID, body)
+	if err != nil {
+		return Message{}, err
+	}
+	msg.TargetID = receiverID
+	return msg, nil
 }
 
 func (r *Repository) SaveGroupMessage(ctx context.Context, groupID, senderID, body string) (Message, error) {
-	return r.saveMessage(ctx, groupID, "group", senderID, body)
+	 msg, err :=r.saveMessage(ctx, groupID, "group", senderID, body)
+	 if err != nil {
+		 return Message{}, err
+	 }
+	 msg.TargetID = groupID
+	 return msg, nil
 }
 
 func (r *Repository) saveMessage(ctx context.Context, chatID, chatType, senderID, body string) (Message, error) {
