@@ -14,20 +14,20 @@ import (
 
 type Handler struct {
 	service      *Service
-	notifService NotifService // add this
+	notifService NotifService 
 }
 
-// Add interface
+
 type NotifService interface {
 	NotifyFollowRequest(ctx context.Context, recipientID, actorID, followRequestID string) error
 }
 
 var ErrUserNotFound = errors.New("user not found")
 
-func NewHandler(db *sql.DB) *Handler {
+func NewHandler(db *sql.DB, svc NotifService) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
-	return &Handler{service: service}
+	return &Handler{service: service, notifService: svc}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -66,7 +66,7 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID 
 
 	switch r.Method {
 	// backend/pkg/followers/handler.go
-// Replace handleFollow POST case only
+    // Replace handleFollow POST case only
 
 case http.MethodPost:
 	err := h.service.Follow(r.Context(), viewerID, targetID)

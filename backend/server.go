@@ -44,17 +44,18 @@ func main() {
 	usersHandler := users.NewHandler(db, uploadDir)
 	usersHandler.RegisterRoutes(mux)
 
-	// ── Followers ─────────────────────────────────────────
-	followersHandler := followers.NewHandler(db)
-	followersHandler.RegisterRoutes(mux)
-	usersHandler.SetFollowersHandler(followersHandler)
-
+	
 	// ── Notifications ─────────────────────────────────────
 	// Must be created before followers/groups/events
 	// so we can pass it as a dependency
 	notifService := notifications.NewServiceFromDB(db)
 	notifHandler := notifications.NewHandlerWithService(db, notifService)
 	notifHandler.RegisterRoutes(mux)
+
+	// ── Followers ─────────────────────────────────────────
+	followersHandler := followers.NewHandler(db, notifService)
+	followersHandler.RegisterRoutes(mux)
+	usersHandler.SetFollowersHandler(followersHandler)
 
 	// ── Posts ─────────────────────────────────────────────
 	postsHandler := posts.NewHandler(db, uploadDir)
