@@ -108,8 +108,7 @@ func (s *Service) Invite(ctx context.Context, groupID, inviterID string, input I
 	if inviteeID == "" || inviteeID == inviterID {
 		return GroupInvitation{}, ErrInvalidInput
 	}
-
-	if err := s.requireCreator(ctx, groupID, inviterID); err != nil {
+    if err := s.requireMember(ctx, groupID, inviterID); err != nil {
 		return GroupInvitation{}, err
 	}
 
@@ -151,6 +150,16 @@ func (s *Service) AcceptInvitation(ctx context.Context, invitationID, viewerID s
 	return s.repo.AcceptInvitation(ctx, invitationID)
 }
 
+func (s *Service) requireMember(ctx context.Context, groupID, userID string) error {
+	group, err := s.repo.GetGroupByID(ctx, groupID, userID)
+	if err != nil {
+		return err
+	}
+	if !group.ViewerStatus.IsMember {
+		return ErrForbidden
+	}
+	return nil
+}
 func (s *Service) DeclineInvitation(ctx context.Context, invitationID, viewerID string) error {
 	_, inviteeID, err := s.repo.GetInvitationTarget(ctx, invitationID)
 	if err != nil {
