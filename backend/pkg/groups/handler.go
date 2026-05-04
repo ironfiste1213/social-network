@@ -19,9 +19,22 @@ type Handler struct {
 	postshandler  PostsRouteHandler
 	notifService  NotifService
 }
-
 type NotifService interface {
-	NotifyFollowRequest(ctx context.Context, recipientID, actorID, followRequestID string) error
+	NotifyGroupInvitation(
+		ctx          context.Context,
+		inviteeID    string,
+		actorID      string,
+		groupID      string,
+		invitationID string,
+	) error
+
+	NotifyGroupJoinRequest(
+		ctx           context.Context,
+		creatorID     string,
+		actorID       string,
+		groupID       string,
+		joinRequestID string,
+	) error
 }
 
 type EventsRoutHandler interface {

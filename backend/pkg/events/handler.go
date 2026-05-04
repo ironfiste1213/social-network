@@ -12,6 +12,8 @@ import (
 
 type Handler struct {
 	service *Service
+   notifService NotifService 
+
 }
 
 func NewHandler(db *sql.DB) *Handler {
