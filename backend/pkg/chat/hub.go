@@ -53,6 +53,7 @@ func (h *Hub) Run() {
 			if len(h.clients[client.userID]) == 0 {
 				delete(h.clients, client.userID)
 			}
+			
 			fmt.Printf("[CHAT][HUB] user %s disconnected\n", client.userID)
 			h.mu.Unlock()
 

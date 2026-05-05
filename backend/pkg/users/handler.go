@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"social-network/backend/pkg/response"
-	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
-	"time"
+
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 
 	"github.com/google/uuid"
 )
@@ -39,7 +39,7 @@ type Handler struct {
 func NewHandler(db *sql.DB, uploadDir string) *Handler {
 	repo := NewRepository(db)
 	service := NewService(repo)
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
 		fmt.Println("[USERS] Warning: could not create upload dir:", err)
 	}
 	return &Handler{service: service, uploadDir: uploadDir}
@@ -202,9 +202,18 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 	parts := strings.SplitN(path, "/", 2)
 
 	targetID := parts[0]
-	if targetID == "" || targetID == "me" {
+	if targetID == "" {
 		http.NotFound(w, r)
 		return
+	}
+
+	if targetID == "me" {
+		requester, err := h.authenticate(r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, "not authenticated")
+			return
+		}
+		targetID = requester.ID
 	}
 
 	// Sub-routes delegated to followers handler
@@ -284,35 +293,4 @@ func (h *Handler) authenticate(r *http.Request) (*User, error) {
 // ServeUploads returns a handler that serves files from uploadDir under /uploads/
 func ServeUploads(uploadDir string) http.Handler {
 	return http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir)))
-}
-
-// Types used in handler
-type UpdateInput struct {
-	Nickname          *string `json:"nickname"`
-	AboutMe           *string `json:"about_me"`
-	AvatarPath        *string `json:"avatar_path"`
-	ProfileVisibility *string `json:"profile_visibility"`
-}
-
-type User struct {
-	ID                string    `json:"id"`
-	Email             string    `json:"email"`
-	FirstName         string    `json:"first_name"`
-	LastName          string    `json:"last_name"`
-	DateOfBirth       time.Time `json:"date_of_birth"`
-	AvatarPath        string    `json:"avatar_path,omitempty"`
-	Nickname          string    `json:"nickname,omitempty"`
-	AboutMe           string    `json:"about_me,omitempty"`
-	ProfileVisibility string    `json:"profile_visibility"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-}
-
-type SearchResult struct {
-	ID                string `json:"id"`
-	FirstName         string `json:"first_name"`
-	LastName          string `json:"last_name"`
-	Nickname          string `json:"nickname"`
-	AvatarPath        string `json:"avatar_path,omitempty"`
-	ProfileVisibility string `json:"profile_visibility"`
 }
