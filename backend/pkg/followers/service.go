@@ -66,7 +66,7 @@ func (s *Service) Follow(ctx context.Context, followerID, followingID string) er
 	return s.repo.CreateFollowRequest(ctx, followerID, followingID)
 }
 
-// Unfollow removes a follower relationship or cancels a pending request
+// Unfollow removes a follower relationship or cancels a pending follow request
 func (s *Service) Unfollow(ctx context.Context, followerID, followingID string) error {
 	fmt.Println("[FOLLOWERS][SERVICE] unfollow started follower:", followerID, "target:", followingID)
 	// Remove actual follow if it exists
@@ -102,6 +102,12 @@ func (s *Service) AcceptRequest(ctx context.Context, requestID, receiverID strin
 func (s *Service) DeclineRequest(ctx context.Context, requestID, receiverID string) error {
 	fmt.Println("[FOLLOWERS][SERVICE] decline request started request:", requestID, "receiver:", receiverID)
 	return s.repo.DeclineFollowRequest(ctx, requestID, receiverID)
+}
+
+// CancelRequest allows a sender to cancel their own pending follow request
+func (s *Service) CancelRequest(ctx context.Context, requestID, senderID string) error {
+	fmt.Println("[FOLLOWERS][SERVICE] cancel request started request:", requestID, "sender:", senderID)
+	return s.repo.DeleteFollowRequestByID(ctx, requestID, senderID)
 }
 
 // GetFollowers returns the follower list for a user

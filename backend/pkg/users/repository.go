@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var ErrUserNotFound = errors.New("user not found")
@@ -67,6 +68,22 @@ func (r *Repository) IsFollowing(ctx context.Context, followerID, followingID st
 }
 
 func (r *Repository) UpdateUser(ctx context.Context, id string, input UpdateInput) (User, error) {
+	if input.ProfileVisibility != nil {
+		newVisibility := *input.ProfileVisibility
+		if newVisibility != "public" && newVisibility != "private" {
+			newVisibility = "public"
+		}
+
+		currentVisibility, err := r.getProfileVisibility(ctx, id)
+		if err != nil {
+			return User{}, err
+		}
+
+		if currentVisibility == "private" && newVisibility == "public" {
+			return r.updateUserAndPromotePendingRequests(ctx, id, input, newVisibility)
+		}
+	}
+
 	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
 	args := []any{}
 
@@ -115,6 +132,97 @@ func (r *Repository) UpdateUser(ctx context.Context, id string, input UpdateInpu
 	}
 
 	return r.GetUserByID(ctx, id)
+}
+
+func (r *Repository) getProfileVisibility(ctx context.Context, id string) (string, error) {
+	var visibility string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT profile_visibility FROM users WHERE id = ?;`,
+		id,
+	).Scan(&visibility)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrUserNotFound
+	}
+	return visibility, err
+}
+
+func (r *Repository) updateUserAndPromotePendingRequests(ctx context.Context, id string, input UpdateInput, visibility string) (User, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+
+	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
+	args := []any{}
+
+	if input.Nickname != nil {
+		setClauses = append(setClauses, "nickname = ?")
+		if *input.Nickname == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.Nickname)
+		}
+	}
+	if input.AboutMe != nil {
+		setClauses = append(setClauses, "about_me = ?")
+		if *input.AboutMe == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.AboutMe)
+		}
+	}
+	if input.AvatarPath != nil {
+		setClauses = append(setClauses, "avatar_path = ?")
+		if *input.AvatarPath == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.AvatarPath)
+		}
+	}
+
+	setClauses = append(setClauses, "profile_visibility = ?")
+	args = append(args, visibility)
+	args = append(args, id)
+
+	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?;", strings.Join(setClauses, ", "))
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		_ = tx.Rollback()
+		return User{}, mapUniquenessError(err)
+	}
+
+	if err := r.promotePendingRequestsToFollowersTx(ctx, tx, id); err != nil {
+		_ = tx.Rollback()
+		return User{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+
+	return r.GetUserByID(ctx, id)
+}
+
+func (r *Repository) promotePendingRequestsToFollowersTx(ctx context.Context, tx *sql.Tx, receiverID string) error {
+	now := time.Now().UTC()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO followers (follower_id, following_id)
+		SELECT sender_id, receiver_id
+		FROM follow_requests
+		WHERE receiver_id = ? AND status = 'pending';
+	`, receiverID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE follow_requests
+		SET status = 'accepted', responded_at = ?
+		WHERE receiver_id = ? AND status = 'pending';
+	`, now, receiverID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) NicknameExistsForOtherUsers(ctx context.Context, userID, nickname string) (bool, error) {

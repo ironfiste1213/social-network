@@ -139,6 +139,23 @@ func (r *Repository) DeleteFollowRequest(ctx context.Context, senderID, receiver
 	return err
 }
 
+// DeleteFollowRequestByID removes a follow request by request ID (used for sender cancellation)
+func (r *Repository) DeleteFollowRequestByID(ctx context.Context, requestID, senderID string) error {
+	fmt.Println("[FOLLOWERS][REPO] DeleteFollowRequestByID request:", requestID, "sender:", senderID)
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM follow_requests WHERE id = ? AND sender_id = ?`,
+		requestID, senderID,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetFollowers returns users who follow targetID
 func (r *Repository) GetFollowers(ctx context.Context, targetID string) ([]UserSummary, error) {
 	fmt.Println("[FOLLOWERS][REPO] GetFollowers target:", targetID)

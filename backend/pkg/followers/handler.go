@@ -50,8 +50,8 @@ func (h *Handler) routeFollow(w http.ResponseWriter, r *http.Request) {
 	h.handleFollow(w, r, path)
 }
 
-// POST /follow/{targetID} → follow
-// DELETE /follow/{targetID} → unfollow
+// POST /follow/{targetID} → send follow request or direct follow (if public profile)
+// DELETE /follow/{targetID} → unfollow user OR cancel pending outgoing follow request
 func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID string) {
 	if targetID == "" {
 		fmt.Println("[FOLLOWERS][HANDLER] follow rejected: missing target user id")
@@ -107,7 +107,10 @@ case http.MethodPost:
 			return
 		}
 		fmt.Println("[FOLLOWERS][HANDLER] unfollow success")
-		response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
+		response.JSON(w, http.StatusOK, map[string]string{
+			"message": "ok",
+			"note":    "removed follower relationship and/or cancelled pending follow request",
+		})
 
 	default:
 		fmt.Println("[FOLLOWERS][HANDLER] follow route rejected: method not allowed:", r.Method)
@@ -142,7 +145,7 @@ func (h *Handler) handleListRequests(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{"requests": reqs})
 }
 
-// POST /follow/requests/{requestID}/accept|decline
+// POST /follow/requests/{requestID}/accept|decline|cancel
 func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		fmt.Println("[FOLLOWERS][HANDLER] respond request rejected: method not allowed:", r.Method)
@@ -183,9 +186,20 @@ func (h *Handler) handleRespondRequest(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusInternalServerError, "failed to decline")
 			return
 		}
+	case "cancel":
+		if err := h.service.CancelRequest(r.Context(), requestID, viewerID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				fmt.Println("[FOLLOWERS][HANDLER] cancel request failed: not found")
+				response.Error(w, http.StatusNotFound, "request not found")
+				return
+			}
+			fmt.Println("[FOLLOWERS][HANDLER] cancel request failed:", err)
+			response.Error(w, http.StatusInternalServerError, "failed to cancel")
+			return
+		}
 	default:
 		fmt.Println("[FOLLOWERS][HANDLER] invalid follow request action:", action)
-		response.Error(w, http.StatusBadRequest, "action must be accept or decline")
+		response.Error(w, http.StatusBadRequest, "action must be accept, decline, or cancel")
 		return
 	}
 	fmt.Println("[FOLLOWERS][HANDLER] respond request success")

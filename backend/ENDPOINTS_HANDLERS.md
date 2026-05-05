@@ -48,11 +48,12 @@ Delegated subroutes inside `handleUserByID`:
 ### Followers package (`backend/pkg/followers/handler.go`)
 
 Directly registered routes:
-- `POST /follow/{targetID}` -> `(*followers.Handler).routeFollow` -> `handleFollow`
-- `DELETE /follow/{targetID}` -> `(*followers.Handler).routeFollow` -> `handleFollow`
-- `GET /follow/requests` -> `(*followers.Handler).handleListRequests`
-- `POST /follow/requests/{requestID}/accept` -> `(*followers.Handler).routeFollow` -> `handleRespondRequest`
-- `POST /follow/requests/{requestID}/decline` -> `(*followers.Handler).routeFollow` -> `handleRespondRequest`
+- `POST /follow/{targetID}` -> `(*followers.Handler).routeFollow` -> `handleFollow` (initiates follow or sends follow request)
+- `DELETE /follow/{targetID}` -> `(*followers.Handler).routeFollow` -> `handleFollow` (unfollows OR cancels pending outgoing follow request)
+- `GET /follow/requests` -> `(*followers.Handler).handleListRequests` (lists incoming follow requests for receiver)
+- `POST /follow/requests/{requestID}/accept` -> `(*followers.Handler).handleRespondRequest` (receiver accepts incoming request)
+- `POST /follow/requests/{requestID}/decline` -> `(*followers.Handler).handleRespondRequest` (receiver declines incoming request)
+- `POST /follow/requests/{requestID}/cancel` -> `(*followers.Handler).handleRespondRequest` (sender cancels pending outgoing request)
 
 Also used by `users` as delegated handler for `/users/{id}/followers|following|follow-status`.
 
