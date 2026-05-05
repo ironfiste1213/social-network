@@ -72,6 +72,45 @@ func (s *Service) GetFollowersOfUser(ctx context.Context, userID string) ([]Foll
 	return s.repo.GetFollowersOfUser(ctx, userID)
 }
 
+func (s *Service) GetPostByID(ctx context.Context, postID, viewerID string) (Post, error) {
+	post, err := s.repo.GetPostByID(ctx, postID)
+	if err != nil {
+		return Post{}, err
+	}
+
+	if post.Privacy == "public" || post.AuthorID == viewerID {
+		return post, nil
+	}
+
+	if post.Privacy == "followers" {
+		if viewerID == "" {
+			return Post{}, ErrForbidden
+		}
+		isFollowing, err := s.repo.IsFollowing(ctx, viewerID, post.AuthorID)
+		if err != nil {
+			return Post{}, err
+		}
+		if !isFollowing {
+			return Post{}, ErrForbidden
+		}
+		return post, nil
+	}
+
+	if post.Privacy == "selected_followers" {
+		if viewerID == "" {
+			return Post{}, ErrForbidden
+		}
+		for _, id := range post.ViewerIDs {
+			if id == viewerID {
+				return post, nil
+			}
+		}
+		return Post{}, ErrForbidden
+	}
+
+	return Post{}, ErrForbidden
+}
+
 func (s *Service) CurrentUserID(ctx context.Context, sessionID string) (string, error) {
 	if sessionID == "" {
 		return "", ErrInvalidCredentials

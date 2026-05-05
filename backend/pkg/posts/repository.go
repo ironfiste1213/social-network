@@ -189,6 +189,15 @@ func (r *Repository) GetUserBySessionID(ctx context.Context, sessionID string) (
 	return userID, err
 }
 
+func (r *Repository) IsFollowing(ctx context.Context, followerID, followingID string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(1) FROM followers WHERE follower_id = ? AND following_id = ?`,
+		followerID, followingID,
+	).Scan(&count)
+	return count > 0, err
+}
+
 func (r *Repository) IsGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `

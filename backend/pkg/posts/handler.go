@@ -103,6 +103,10 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 		h.uploadImage(w, r, postID)
 		return
 	}
+	if r.Method == http.MethodGet {
+		h.getPost(w, r, postID)
+		return
+	}
 	if r.Method == http.MethodDelete {
 		h.deletePost(w, r, postID)
 		return
@@ -197,6 +201,30 @@ func (h *Handler) deletePost(w http.ResponseWriter, r *http.Request, postID stri
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) getPost(w http.ResponseWriter, r *http.Request, postID string) {
+	viewerID := ""
+	if sessionID, err := sessionauth.SessionIDFromRequest(r); err == nil {
+		if userID, err := h.service.CurrentUserID(r.Context(), sessionID); err == nil {
+			viewerID = userID
+		}
+	}
+
+	post, err := h.service.GetPostByID(r.Context(), postID, viewerID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "post not found")
+			return
+		}
+		if errors.Is(err, ErrForbidden) {
+			response.Error(w, http.StatusForbidden, "access denied")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "failed to get post")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]any{"post": post})
 }
 
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID string) {

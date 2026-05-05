@@ -62,6 +62,7 @@ Also used by `users` as delegated handler for `/users/{id}/followers|following|f
 Registered routes:
 - `POST /posts` -> `(*posts.Handler).handlePosts` -> `createPost`
 - `GET /posts` -> `(*posts.Handler).handlePosts` -> `getFeed`
+- `GET /posts/{id}` -> `(*posts.Handler).handlePostByID` -> `getPost`
 - `DELETE /posts/{id}` -> `(*posts.Handler).handlePostByID` -> `deletePost`
 - `POST /posts/{id}/image` -> `(*posts.Handler).handlePostByID` -> `uploadImage`
 - `GET /posts/my-followers` -> `(*posts.Handler).GetMyFollowers` (registered in `server.go`)
