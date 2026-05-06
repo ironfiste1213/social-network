@@ -56,6 +56,17 @@ func (s *Service) UpdateImagePath(ctx context.Context, commentID, authorID, imag
 	return s.repo.UpdateImagePath(ctx, commentID, authorID, imagePath)
 }
 
+func (s *Service) VerifyCommentPost(ctx context.Context, commentID, postID string) error {
+	comment, err := s.repo.GetCommentByID(ctx, commentID)
+	if err != nil {
+		return err
+	}
+	if comment.PostID != postID {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Service) CurrentUserID(ctx context.Context, sessionID string) (string, error) {
 	if sessionID == "" {
 		return "", ErrInvalidCredentials

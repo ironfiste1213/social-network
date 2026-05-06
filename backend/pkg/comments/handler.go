@@ -102,7 +102,7 @@ func (h *Handler) routeWithPostID(w http.ResponseWriter, r *http.Request, postID
 			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		h.uploadImage(w, r, commentID)
+		h.uploadImage(w, r, postID, commentID)
 		return
 	}
 
@@ -183,9 +183,18 @@ func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, commentI
 	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
-func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, commentID string) {
+func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID, commentID string) {
 	authorID, ok := h.authenticate(w, r)
 	if !ok {
+		return
+	}
+
+	if err := h.service.VerifyCommentPost(r.Context(), commentID, postID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "comment not found")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "failed to validate comment")
 		return
 	}
 
