@@ -80,6 +80,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PATCH /users/me
 func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
 	var input UpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -154,6 +155,7 @@ func (h *Handler) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{"user": updated, "avatar_path": avatarPath})
 }
 
+// GET /users/search
 func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")

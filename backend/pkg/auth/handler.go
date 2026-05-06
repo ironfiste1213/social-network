@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
+
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
-	"time"
 )
 
 type Handler struct {
@@ -29,6 +30,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/auth/me", h.handleMe)
 }
 
+// POST /auth/register
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -57,6 +59,7 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /auth/login
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -85,6 +88,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /auth/logout
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -105,6 +109,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /auth/me
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")

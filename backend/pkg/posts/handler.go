@@ -44,6 +44,8 @@ func (h *Handler) SetCommentsHandler(handler PostSubrouteHandler) {
 	h.comments = handler
 }
 
+// GET /groups/{groupID}/posts
+// POST /groups/{groupID}/posts
 func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, groupID, sub string) bool {
 	path := strings.TrimPrefix(sub, "posts")
 	path = strings.TrimPrefix(path, "/")
@@ -178,6 +180,7 @@ func (h *Handler) HandleUserPostRoutes(w http.ResponseWriter, r *http.Request, a
 	return true
 }
 
+// POST /posts
 func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 	authorID, ok := h.authenticate(w, r)
 	if !ok {
@@ -204,6 +207,7 @@ func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, map[string]any{"post": post})
 }
 
+// GET /posts
 func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
 	viewerID, ok := h.authenticate(w, r)
 	if !ok {
@@ -238,6 +242,7 @@ func (h *Handler) getUserPosts(w http.ResponseWriter, r *http.Request, authorID 
 	response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
 }
 
+// DELETE /posts/{postID}
 func (h *Handler) deletePost(w http.ResponseWriter, r *http.Request, postID string) {
 	requesterID, ok := h.authenticate(w, r)
 	if !ok {
@@ -254,6 +259,7 @@ func (h *Handler) deletePost(w http.ResponseWriter, r *http.Request, postID stri
 	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
+// GET /posts/{postID}
 func (h *Handler) getPost(w http.ResponseWriter, r *http.Request, postID string) {
 	viewerID := ""
 	if sessionID, err := sessionauth.SessionIDFromRequest(r); err == nil {
@@ -278,6 +284,7 @@ func (h *Handler) getPost(w http.ResponseWriter, r *http.Request, postID string)
 	response.JSON(w, http.StatusOK, map[string]any{"post": post})
 }
 
+// POST /posts/{postID}/image
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID, groupID string) {
 	if r.Method != http.MethodPost {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")

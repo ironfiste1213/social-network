@@ -74,6 +74,7 @@ func (h *Handler) HandleGroupEventRoutes(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
+// POST /groups/{groupID}/events
 func (h *Handler) createEvent(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -110,6 +111,7 @@ func (h *Handler) createEvent(w http.ResponseWriter, r *http.Request, groupID st
 	response.JSON(w, http.StatusCreated, map[string]any{"event": event})
 }
 
+// GET /groups/{groupID}/events
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -132,6 +134,7 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request, groupID str
 	response.JSON(w, http.StatusOK, map[string]any{"events": evts})
 }
 
+// POST /groups/{groupID}/events/{eventID}/respond
 func (h *Handler) respond(w http.ResponseWriter, r *http.Request, groupID, eventID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {

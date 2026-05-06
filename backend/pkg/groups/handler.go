@@ -63,6 +63,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/groups/", h.handleGroupRoutes)
 }
 
+// GET /groups
+// POST /groups
 func (h *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -153,6 +155,7 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// POST /groups
 func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -178,6 +181,7 @@ func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, map[string]any{"group": group})
 }
 
+// GET /groups
 func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -197,6 +201,7 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{"groups": groups})
 }
 
+// GET /groups/{groupID}
 func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -216,6 +221,7 @@ func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request, groupID strin
 	response.JSON(w, http.StatusOK, map[string]any{"group": group})
 }
 
+// POST /groups/{groupID}/join
 func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -249,6 +255,7 @@ func (h *Handler) requestJoin(w http.ResponseWriter, r *http.Request, groupID st
 	response.JSON(w, http.StatusCreated, map[string]any{"request": request})
 }
 
+// GET /groups/{groupID}/requests
 func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -274,6 +281,8 @@ func (h *Handler) listJoinRequests(w http.ResponseWriter, r *http.Request, group
 	response.JSON(w, http.StatusOK, map[string]any{"requests": requests})
 }
 
+// POST /groups/requests/{requestID}/accept
+// POST /groups/requests/{requestID}/decline
 func (h *Handler) respondJoinRequest(w http.ResponseWriter, r *http.Request, requestID, action string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -306,6 +315,7 @@ func (h *Handler) respondJoinRequest(w http.ResponseWriter, r *http.Request, req
 	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
+// POST /groups/{groupID}/invite
 func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -348,6 +358,7 @@ func (h *Handler) inviteToGroup(w http.ResponseWriter, r *http.Request, groupID 
 	response.JSON(w, http.StatusCreated, map[string]any{"invitation": invitation})
 }
 
+// GET /groups/invitations
 func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -366,6 +377,8 @@ func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{"invitations": invitations})
 }
 
+// POST /groups/invitations/{invitationID}/accept
+// POST /groups/invitations/{invitationID}/decline
 func (h *Handler) respondInvitation(w http.ResponseWriter, r *http.Request, invitationID, action string) {
 	userID, ok := h.authenticate(w, r)
 	if !ok {
@@ -398,6 +411,7 @@ func (h *Handler) respondInvitation(w http.ResponseWriter, r *http.Request, invi
 	response.JSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
+// GET /groups/{groupID}/members
 func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request, groupID string) {
 	if _, ok := h.authenticate(w, r); !ok {
 		return

@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
-	"strings"
 
 	"github.com/google/uuid"
 )
@@ -115,6 +116,7 @@ func (h *Handler) routeWithPostID(w http.ResponseWriter, r *http.Request, postID
 	response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
+// POST /posts/{postID}/comments
 func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, postID string) {
 	authorID, ok := h.authenticate(w, r)
 	if !ok {
@@ -143,6 +145,7 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, postID s
 	response.JSON(w, http.StatusCreated, map[string]any{"comment": comment})
 }
 
+// GET /posts/{postID}/comments
 func (h *Handler) listComments(w http.ResponseWriter, r *http.Request, postID string) {
 	viewerID, ok := h.authenticate(w, r)
 	if !ok {
@@ -165,6 +168,7 @@ func (h *Handler) listComments(w http.ResponseWriter, r *http.Request, postID st
 	response.JSON(w, http.StatusOK, map[string]any{"comments": comments})
 }
 
+// DELETE /posts/{postID}/comments/{commentID}
 func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, commentID string) {
 	requesterID, ok := h.authenticate(w, r)
 	if !ok {
@@ -183,6 +187,7 @@ func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, commentI
 	response.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
+// POST /posts/{postID}/comments/{commentID}/image
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID, commentID string) {
 	authorID, ok := h.authenticate(w, r)
 	if !ok {
