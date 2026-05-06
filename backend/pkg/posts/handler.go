@@ -48,12 +48,6 @@ func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, 
 	path := strings.TrimPrefix(sub, "posts")
 	path = strings.TrimPrefix(path, "/")
 
-	// Handle /groups/{groupID}/posts/image
-	if path == "image" {
-		h.uploadGroupImage(w, r, groupID)
-		return true
-	}
-
 	// Handle /groups/{groupID}/posts
 	if path == "" {
 		switch r.Method {
@@ -64,6 +58,11 @@ func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, 
 		default:
 			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
+		return true
+	}
+
+	if len(parts) == 2 && parts[1] == "image" {
+		h.uploadImage(w, r, parts[0], groupID)
 		return true
 	}
 
@@ -145,7 +144,7 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "image" {
-		h.uploadImage(w, r, postID)
+		h.uploadImage(w, r, postID, "")
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -272,7 +271,7 @@ func (h *Handler) getPost(w http.ResponseWriter, r *http.Request, postID string)
 	response.JSON(w, http.StatusOK, map[string]any{"post": post})
 }
 
-func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID string) {
+func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID, groupID string) {
 	if r.Method != http.MethodPost {
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -280,6 +279,18 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 	authorID, ok := h.authenticate(w, r)
 	if !ok {
 		return
+	}
+	// If this is a group post image upload, verify group membership
+	if groupID != "" {
+		isMember, err := h.service.IsGroupMember(r.Context(), groupID, authorID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "failed to validate group membership")
+			return
+		}
+		if !isMember {
+			response.Error(w, http.StatusForbidden, "you must be a group member to upload images for group posts")
+			return
+		}
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize)
 	if err := r.ParseMultipartForm(maxImageSize); err != nil {
@@ -318,51 +329,6 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 		response.Error(w, http.StatusInternalServerError, "failed to update post image")
 		return
 	}
-	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
-}
-
-func (h *Handler) uploadGroupImage(w http.ResponseWriter, r *http.Request, groupID string) {
-	if r.Method != http.MethodPost {
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	authorID, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize)
-	if err := r.ParseMultipartForm(maxImageSize); err != nil {
-		response.Error(w, http.StatusBadRequest, "file too large or invalid form")
-		return
-	}
-	file, header, err := r.FormFile("image")
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "missing image file")
-		return
-	}
-	defer file.Close()
-
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
-	if !allowed[ext] {
-		response.Error(w, http.StatusBadRequest, "only jpg, png, gif allowed")
-		return
-	}
-
-	filename := uuid.NewString() + ext
-	dest := filepath.Join(h.uploadDir, filename)
-	out, err := os.Create(dest)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "failed to save file")
-		return
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, file); err != nil {
-		response.Error(w, http.StatusInternalServerError, "failed to write file")
-		return
-	}
-
-	imagePath := "/uploads/" + filename
 	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
 }
 

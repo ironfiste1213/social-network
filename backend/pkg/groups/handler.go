@@ -143,7 +143,8 @@ func (h *Handler) handleGroupRoutes(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		h.postshandler.HandleGroupPostRoutes(w, r, groupID, "posts")
+		subPath := strings.Join(parts[1:], "/")
+		h.postshandler.HandleGroupPostRoutes(w, r, groupID, subPath)
 	case "events":
 		sub := strings.Join(parts[1:], "/")
 		h.eventshandler.HandleGroupEventRoutes(w, r, groupID, sub)

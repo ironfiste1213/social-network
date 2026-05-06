@@ -60,6 +60,10 @@ func (s *Service) GetGroupPosts(ctx context.Context, groupID, viewerID string, l
 	return s.repo.GetGroupPosts(ctx, groupID, viewerID, limit, offset)
 }
 
+func (s *Service) IsGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
+	return s.repo.IsGroupMember(ctx, groupID, userID)
+}
+
 func (s *Service) DeletePost(ctx context.Context, postID, requesterID string) error {
 	return s.repo.DeletePost(ctx, postID, requesterID)
 }
