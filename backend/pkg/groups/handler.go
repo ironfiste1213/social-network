@@ -21,18 +21,18 @@ type Handler struct {
 }
 type NotifService interface {
 	NotifyGroupInvitation(
-		ctx          context.Context,
-		inviteeID    string,
-		actorID      string,
-		groupID      string,
+		ctx context.Context,
+		inviteeID string,
+		actorID string,
+		groupID string,
 		invitationID string,
 	) error
 
 	NotifyGroupJoinRequest(
-		ctx           context.Context,
-		creatorID     string,
-		actorID       string,
-		groupID       string,
+		ctx context.Context,
+		creatorID string,
+		actorID string,
+		groupID string,
 		joinRequestID string,
 	) error
 }

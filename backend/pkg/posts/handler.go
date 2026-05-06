@@ -61,6 +61,7 @@ func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 
+	parts := strings.Split(path, "/")
 	if len(parts) == 2 && parts[1] == "image" {
 		h.uploadImage(w, r, parts[0], groupID)
 		return true
