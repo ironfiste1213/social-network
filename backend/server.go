@@ -19,10 +19,10 @@ import (
 )
 
 func main() {
-	dbPath        := getenv("SQLITE_PATH",      "./social-network.db")
-	addr          := getenv("APP_ADDR",         ":8080")
+	dbPath := getenv("SQLITE_PATH", "./social-network.db")
+	addr := getenv("APP_ADDR", ":8080")
 	frontendOrigin := getenv("FRONTEND_ORIGIN", "http://localhost:3000")
-	uploadDir     := getenv("UPLOAD_DIR",       "./uploads")
+	uploadDir := getenv("UPLOAD_DIR", "./uploads")
 
 	db, err := sqlite.New(dbPath)
 	if err != nil {
@@ -44,7 +44,6 @@ func main() {
 	usersHandler := users.NewHandler(db, uploadDir)
 	usersHandler.RegisterRoutes(mux)
 
-	
 	// ── Notifications ─────────────────────────────────────
 	// Must be created before followers/groups/events
 	// so we can pass it as a dependency
@@ -75,9 +74,6 @@ func main() {
 	groupsHandler.RegisterRoutes(mux)
 	groupsHandler.SetEventsHandler(eventsHandler)
 	groupsHandler.SetPostsHandler(postsHandler)
-
-	// Wire notif service into followers handler
-	// !!!!!!!!!!!!! -----> followersHandler.SetNotifService(notifService)
 
 	// ── Chat ──────────────────────────────────────────────
 	hub := chat.NewHub()

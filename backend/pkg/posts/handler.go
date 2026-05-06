@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"social-network/backend/pkg/response"
-	"social-network/backend/pkg/sessionauth"
 	"strconv"
 	"strings"
+
+	"social-network/backend/pkg/response"
+	"social-network/backend/pkg/sessionauth"
 
 	"github.com/google/uuid"
 )
@@ -42,33 +43,77 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) SetCommentsHandler(handler PostSubrouteHandler) {
 	h.comments = handler
 }
+
 func (h *Handler) HandleGroupPostRoutes(w http.ResponseWriter, r *http.Request, groupID, sub string) bool {
-    if sub != "posts" {
-        return false
-    }
-    if r.Method != http.MethodGet {
-        response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-        return true
-    }
-    h.getGroupPosts(w, r, groupID)
-    return true
+	path := strings.TrimPrefix(sub, "posts")
+	path = strings.TrimPrefix(path, "/")
+
+	// Handle /groups/{groupID}/posts/image
+	if path == "image" {
+		h.uploadGroupImage(w, r, groupID)
+		return true
+	}
+
+	// Handle /groups/{groupID}/posts
+	if path == "" {
+		switch r.Method {
+		case http.MethodGet:
+			h.getGroupPosts(w, r, groupID)
+		case http.MethodPost:
+			h.createGroupPost(w, r, groupID)
+		default:
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+		return true
+	}
+
+	return false
 }
 
 func (h *Handler) getGroupPosts(w http.ResponseWriter, r *http.Request, groupID string) {
-    viewerID, ok := h.authenticate(w, r)
-    if !ok {
-        return
-    }
-    limit, offset := parsePagination(r)
-    posts, err := h.service.GetGroupPosts(r.Context(), groupID, viewerID, limit, offset)
-    if err != nil {
-        response.Error(w, http.StatusInternalServerError, "failed to get group posts")
-        return
-    }
-    if posts == nil {
-        posts = []Post{}
-    }
-    response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
+	viewerID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	limit, offset := parsePagination(r)
+	posts, err := h.service.GetGroupPosts(r.Context(), groupID, viewerID, limit, offset)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to get group posts")
+		return
+	}
+	if posts == nil {
+		posts = []Post{}
+	}
+	response.JSON(w, http.StatusOK, map[string]any{"posts": posts})
+}
+
+func (h *Handler) createGroupPost(w http.ResponseWriter, r *http.Request, groupID string) {
+	authorID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var input CreatePostInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	// Pre-fill group_id from the route
+	input.GroupID = groupID
+
+	post, err := h.service.CreatePost(r.Context(), authorID, input)
+	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			response.Error(w, http.StatusBadRequest, "invalid input: body required; selected_followers requires viewer_ids")
+			return
+		}
+		if errors.Is(err, ErrForbidden) {
+			response.Error(w, http.StatusForbidden, "you must be a group member to post in this group")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "failed to create post")
+		return
+	}
+	response.JSON(w, http.StatusCreated, map[string]any{"post": post})
 }
 
 // POST /posts         — create
@@ -273,6 +318,51 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request, postID str
 		response.Error(w, http.StatusInternalServerError, "failed to update post image")
 		return
 	}
+	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
+}
+
+func (h *Handler) uploadGroupImage(w http.ResponseWriter, r *http.Request, groupID string) {
+	if r.Method != http.MethodPost {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	authorID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageSize)
+	if err := r.ParseMultipartForm(maxImageSize); err != nil {
+		response.Error(w, http.StatusBadRequest, "file too large or invalid form")
+		return
+	}
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "missing image file")
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true}
+	if !allowed[ext] {
+		response.Error(w, http.StatusBadRequest, "only jpg, png, gif allowed")
+		return
+	}
+
+	filename := uuid.NewString() + ext
+	dest := filepath.Join(h.uploadDir, filename)
+	out, err := os.Create(dest)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to save file")
+		return
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, file); err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to write file")
+		return
+	}
+
+	imagePath := "/uploads/" + filename
 	response.JSON(w, http.StatusOK, map[string]string{"image_path": imagePath})
 }
 

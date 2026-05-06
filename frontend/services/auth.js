@@ -18,3 +18,5 @@ export const register     = (data) => apiRequest('/auth/register', { method: 'PO
 export const login        = (data) => apiRequest('/auth/login',    { method: 'POST', body: JSON.stringify(data) });
 export const logout       = ()     => apiRequest('/auth/logout',   { method: 'POST' });
 export const getCurrentUser = ()   => apiRequest('/auth/me');
+
+

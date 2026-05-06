@@ -14,16 +14,17 @@ import (
 
 type Handler struct {
 	service      *Service
-	notifService NotifService 
+	notifService NotifService
 }
 type NotifService interface {
 	NotifyFollowRequest(
-		ctx             context.Context,
-		recipientID     string,
-		actorID         string,
+		ctx context.Context,
+		recipientID string,
+		actorID string,
 		followRequestID string,
 	) error
 }
+
 var ErrUserNotFound = errors.New("user not found")
 
 func NewHandler(db *sql.DB, svc NotifService) *Handler {
@@ -68,37 +69,44 @@ func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request, targetID 
 
 	switch r.Method {
 	// backend/pkg/followers/handler.go
-    // Replace handleFollow POST case only
+	// Replace handleFollow POST case only
 
-case http.MethodPost:
-	err := h.service.Follow(r.Context(), viewerID, targetID)
-	switch {
-	case errors.Is(err, ErrCannotFollowSelf):
-		response.Error(w, http.StatusBadRequest, "cannot follow yourself")
-	case errors.Is(err, ErrAlreadyFollowing):
-		response.Error(w, http.StatusConflict, "already following")
-	case errors.Is(err, ErrRequestAlreadyExists):
-		response.Error(w, http.StatusConflict, "follow request already sent")
-	case errors.Is(err, ErrNotFound):
-		response.Error(w, http.StatusNotFound, "user not found")
-	case err != nil:
-		response.Error(w, http.StatusInternalServerError, "failed to follow")
-	default:
-		// Check if a request was created (private profile)
-		// or a direct follow happened (public profile)
-		status, err := h.service.GetFollowStatus(r.Context(), viewerID, targetID)
-		if err != nil {
-			// Still success, just can't get status detail
-			response.JSON(w, http.StatusOK, map[string]any{"message": "ok"})
-			return
+	case http.MethodPost:
+		err := h.service.Follow(r.Context(), viewerID, targetID)
+		switch {
+		case errors.Is(err, ErrCannotFollowSelf):
+			response.Error(w, http.StatusBadRequest, "cannot follow yourself")
+		case errors.Is(err, ErrAlreadyFollowing):
+			response.Error(w, http.StatusConflict, "already following")
+		case errors.Is(err, ErrRequestAlreadyExists):
+			response.Error(w, http.StatusConflict, "follow request already sent")
+		case errors.Is(err, ErrNotFound):
+			response.Error(w, http.StatusNotFound, "user not found")
+		case err != nil:
+			response.Error(w, http.StatusInternalServerError, "failed to follow")
+		default:
+			// Check if a request was created (private profile)
+			// or a direct follow happened (public profile)
+			status, err := h.service.GetFollowStatus(r.Context(), viewerID, targetID)
+			if err != nil {
+				// Still success, just can't get status detail
+				response.JSON(w, http.StatusOK, map[string]any{"message": "ok"})
+				return
+			}
+			// Notify if a follow request was created (private profile)
+			if status.RequestID != "" {
+				if notifyErr := h.notifService.NotifyFollowRequest(r.Context(), targetID, viewerID, status.RequestID); notifyErr != nil {
+					fmt.Println("[FOLLOWERS][HANDLER] notification failed:", notifyErr)
+					// Don't fail the request, just log the error
+				}
+			}
+			response.JSON(w, http.StatusOK, map[string]any{
+				"message":             "ok",
+				"request_id":          status.RequestID, // empty string if public (direct follow)
+				"is_following":        status.IsFollowing,
+				"has_pending_request": status.HasPendingRequest,
+			})
 		}
-		response.JSON(w, http.StatusOK, map[string]any{
-			"message":    "ok",
-			"request_id": status.RequestID,         // empty string if public (direct follow)
-			"is_following":       status.IsFollowing,
-			"has_pending_request": status.HasPendingRequest,
-		})
-	}
 
 	case http.MethodDelete:
 		if err := h.service.Unfollow(r.Context(), viewerID, targetID); err != nil {
