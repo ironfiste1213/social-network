@@ -251,3 +251,16 @@ func (r *Repository) GetuserID(ctx context.Context, sessionID string) (string, e
 	fmt.Println("[FOLLOWERS][REPO] GetuserID success user:", userId)
 	return userId, err
 }
+
+func (r *Repository) GetFollowRequestByID(ctx context.Context, requestID string) (string, string, error) {
+    // returns senderID, receiverID
+    var senderID, receiverID string
+    err := r.db.QueryRowContext(ctx,
+        `SELECT sender_id, receiver_id FROM follow_requests WHERE id = ? AND status = 'pending'`,
+        requestID,
+    ).Scan(&senderID, &receiverID)
+    if errors.Is(err, sql.ErrNoRows) {
+        return "", "", ErrNotFound
+    }
+    return senderID, receiverID, err
+}
