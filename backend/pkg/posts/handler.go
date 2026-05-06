@@ -140,6 +140,12 @@ func (h *Handler) handlePostByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Special case: /posts/my-followers
+	if postID == "my-followers" && r.Method == http.MethodGet {
+		h.GetMyFollowers(w, r)
+		return
+	}
+
 	if len(parts) == 2 && h.comments != nil && h.comments.HandlePostSubroute(w, r, postID, parts[1]) {
 		return
 	}

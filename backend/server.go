@@ -60,7 +60,6 @@ func main() {
 	postsHandler := posts.NewHandler(db, uploadDir)
 	postsHandler.RegisterRoutes(mux)
 	usersHandler.SetPostsHandler(postsHandler)
-	mux.HandleFunc("/posts/my-followers", postsHandler.GetMyFollowers)
 
 	// ── Comments ──────────────────────────────────────────
 	commentsHandler := comments.NewHandler(db, uploadDir)
