@@ -81,21 +81,15 @@ func (s *Service) Unfollow(ctx context.Context, followerID, followingID string) 
 
 // AcceptRequest accepts a pending follow request
 func (s *Service) AcceptRequest(ctx context.Context, requestID, receiverID string) error {
-	fmt.Println("[FOLLOWERS][SERVICE] accept request started request:", requestID, "receiver:", receiverID)
-	// We need the sender ID — get it from pending requests
-	reqs, err := s.repo.GetPendingRequests(ctx, receiverID)
-	if err != nil {
-		fmt.Println("[FOLLOWERS][SERVICE] accept request failed during GetPendingRequests:", err)
-		return err
-	}
-	for _, req := range reqs {
-		if req.ID == requestID {
-			fmt.Println("[FOLLOWERS][SERVICE] accept request matched sender:", req.Sender.ID)
-			return s.repo.AcceptFollowRequest(ctx, requestID, req.Sender.ID, receiverID)
-		}
-	}
-	fmt.Println("[FOLLOWERS][SERVICE] accept request failed: request not found in pending list")
-	return ErrNotFound
+    senderID, targetReceiverID, err := s.repo.GetFollowRequestByID(ctx, requestID)
+    if err != nil {
+        return err
+    }
+    // Verify the receiver matches — prevents accepting someone else's request
+    if targetReceiverID != receiverID {
+        return ErrNotFound
+    }
+    return s.repo.AcceptFollowRequest(ctx, requestID, senderID, receiverID)
 }
 
 // DeclineRequest declines a pending follow request
