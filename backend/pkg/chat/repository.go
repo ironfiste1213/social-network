@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -30,7 +29,6 @@ func (r *Repository) getUserBySessionID(ctx context.Context, sessionID string) (
 	}
 	return userID, err
 }
-
 
 func (r *Repository) CanChatPrivate(ctx context.Context, senderID, receiverID string) (bool, error) {
 	var count int
@@ -73,7 +71,7 @@ func (r *Repository) GetGroupMemberIDs(ctx context.Context, groupID string) ([]s
 
 func (r *Repository) SavePrivateMessage(ctx context.Context, senderID, receiverID, body string) (Message, error) {
 	chatID := r.privateChatID(senderID, receiverID)
-	msg, err:= r.saveMessage(ctx, chatID, "private", senderID, body)
+	msg, err := r.saveMessage(ctx, chatID, "private", senderID, body)
 	if err != nil {
 		return Message{}, err
 	}
@@ -82,14 +80,15 @@ func (r *Repository) SavePrivateMessage(ctx context.Context, senderID, receiverI
 }
 
 func (r *Repository) SaveGroupMessage(ctx context.Context, groupID, senderID, body string) (Message, error) {
-	 msg, err :=r.saveMessage(ctx, groupID, "group", senderID, body)
-	 if err != nil {
-		 return Message{}, err
-	 }
-	 msg.TargetID = groupID
-	 return msg, nil
+	msg, err := r.saveMessage(ctx, groupID, "group", senderID, body)
+	if err != nil {
+		return Message{}, err
+	}
+	msg.TargetID = groupID
+	return msg, nil
 }
-func (r *Repository) saveMessage(ctx context.Context, chatID string,  senderID string, body string) (Message, error) {
+
+func (r *Repository) saveMessage(ctx context.Context, chatID string, senderID string, body string) (Message, error) {
 	id := uuid.NewString()
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO chat_messages (
@@ -100,13 +99,13 @@ func (r *Repository) saveMessage(ctx context.Context, chatID string,  senderID s
 		)
 		VALUES (?, ?, ?, ?);
 	`, id, chatID, senderID, body)
-
 	if err != nil {
 		return Message{}, fmt.Errorf("save message: %w", err)
 	}
 
 	return r.getMessageByID(ctx, id)
 }
+
 func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, error) {
 	var m Message
 	var sender UserInfo
@@ -162,8 +161,7 @@ func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, er
 	return m, nil
 }
 
-func (r *Repository) GetHistory( ctx context.Context, chatID string, beforeMessageID string, limit int) ([]Message, error) {
-
+func (r *Repository) GetHistory(ctx context.Context, chatID string, beforeMessageID string, limit int) ([]Message, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -241,72 +239,58 @@ func (r *Repository) GetHistory( ctx context.Context, chatID string, beforeMessa
 	return msgs, rows.Err()
 }
 
-func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Conversation, error) {
+func (r *Repository) GetConversations(
+	ctx context.Context,
+	userID string,
+) ([]Conversation, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT m.chat_id, m.chat_type, m.body, m.created_at
-		FROM chat_messages m
-		INNER JOIN (
-			SELECT chat_id, MAX(created_at) AS latest
+		SELECT
+			c.id,
+			c.type,
+			m.body,
+			m.created_at
+		FROM chats c
+		JOIN chat_participants p ON p.chat_id = c.id
+		JOIN chat_messages m ON m.chat_id = c.id
+		WHERE p.user_id = ?
+		AND m.created_at = (
+			SELECT MAX(created_at)
 			FROM chat_messages
-			WHERE sender_id = ?
-			   OR (chat_type = 'private' AND chat_id LIKE '%' || ? || '%')
-			GROUP BY chat_id
-		) l ON m.chat_id = l.chat_id AND m.created_at = l.latest
+			WHERE chat_id = c.id
+		)
 		ORDER BY m.created_at DESC;
-	`, userID, userID)
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var convos []Conversation
+
 	for rows.Next() {
-		var chatID, chatType, lastMsg string
-		var lastAt interface{}
+		var (
+			chatID   string
+			chatType string
+			lastMsg  string
+			lastAt   time.Time
+		)
+
 		if err := rows.Scan(&chatID, &chatType, &lastMsg, &lastAt); err != nil {
 			return nil, err
 		}
 
-		c := Conversation{
-			ChatType:    chatType,
+		convos = append(convos, Conversation{
+			ChatID:      chatID,
+			ChatType:    ChatType(chatType),
 			LastMessage: lastMsg,
-		}
-		if t, ok := lastAt.(string); ok {
-			// parse time — SQLite returns strings
-			_ = t
-		}
-
-		if chatType == "group" {
-			var title string
-			_ = r.db.QueryRowContext(ctx,
-				`SELECT title FROM groups WHERE id = ?;`, chatID,
-			).Scan(&title)
-			// frontend uses group_id to fetch history — safe to expose
-			c.GroupID = chatID
-			c.GroupTitle = title
-		} else {
-			// derive the other user — chat_id stays internal
-			otherID := otherUserFromChatID(chatID, userID)
-			if otherID != "" {
-				var p UserInfo
-				_ = r.db.QueryRowContext(ctx, `
-					SELECT id, first_name, last_name,
-					       COALESCE(nickname,''), COALESCE(avatar_path,'')
-					FROM users WHERE id = ?;
-				`, otherID).Scan(&p.ID, &p.FirstName, &p.LastName, &p.Nickname, &p.AvatarPath)
-				c.Participant = &p
-			}
-		}
-		convos = append(convos, c)
+			LastAt:      lastAt,
+		})
 	}
+
 	return convos, rows.Err()
 }
 
-
-
-
 func (r *Repository) GetOrCreatePrivateChat(ctx context.Context, userA string, userB string) (string, error) {
-
 	// sort users to make stable private_key
 	privateKey := userA + ":" + userB
 	if userB < userA {
