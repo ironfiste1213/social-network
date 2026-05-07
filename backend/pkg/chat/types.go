@@ -2,15 +2,45 @@ package chat
 
 import "time"
 
-type Message struct {
+type ChatType string
+
+const (
+	ChatTypePrivate ChatType = "private"
+	ChatTypeGroup   ChatType = "group"
+)
+
+//
+// =========================
+// DATABASE MODELS
+// =========================
+//
+
+type Chat struct {
+	ID         string     `json:"id"`
+	Type       ChatType   `json:"type"`
+	PrivateKey *string    `json:"private_key,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type ChatParticipant struct {
+	ChatID   string    `json:"chat_id"`
+	UserID   string    `json:"user_id"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+type ChatMessage struct {
 	ID        string    `json:"id"`
-	ChatType  string    `json:"chat_type"`
+	ChatID    string    `json:"chat_id"`
 	SenderID  string    `json:"sender_id"`
-	Sender    *UserInfo `json:"sender,omitempty"`
 	Body      string    `json:"body"`
-	TargetID  string    `json:"target_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+//
+// =========================
+// SHARED / API MODELS
+// =========================
+//
 
 type UserInfo struct {
 	ID         string `json:"id"`
@@ -20,28 +50,60 @@ type UserInfo struct {
 	AvatarPath string `json:"avatar_path,omitempty"`
 }
 
-// Conversation is what the frontend sees in the sidebar.
-// No chat_id — frontend uses receiver_id or group_id to fetch history.
-type Conversation struct {
-	ChatType    string    `json:"chat_type"`             // "private" | "group"
-	Participant *UserInfo `json:"participant,omitempty"` // private: the other user
-	GroupID     string    `json:"group_id,omitempty"`    // group: the group id
-	GroupTitle  string    `json:"group_title,omitempty"` // group: the group title
-	LastMessage string    `json:"last_message"`
-	LastAt      time.Time `json:"last_at"`
+//
+// Message returned to frontend/ws
+//
+
+type Message struct {
+	ID        string     `json:"id"`
+	ChatID    string     `json:"chat_id"`
+	ChatType  ChatType   `json:"chat_type"`
+
+	SenderID  string     `json:"sender_id"`
+	Sender    *UserInfo  `json:"sender,omitempty"`
+
+	Body      string     `json:"body"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
-// InboundEvent : client -> server
-// Frontend never sends chat_id — only who to send to.
+//
+// Conversation shown in sidebar
+//
+
+type Conversation struct {
+	ChatID      string     `json:"chat_id"`
+	ChatType    ChatType   `json:"chat_type"`
+
+	// private chat
+	Participant *UserInfo  `json:"participant,omitempty"`
+
+	// group chat
+	GroupTitle  string     `json:"group_title,omitempty"`
+
+	LastMessage string     `json:"last_message"`
+	LastAt      time.Time  `json:"last_at"`
+}
+
+//
+// =========================
+// WEBSOCKET EVENTS
+// =========================
+//
+
+// client -> server
 type InboundEvent struct {
-	Type string `json:"type"` // "send_private" | "send_group" | "ping"
-	To   string `json:"to"`   // receiverID (private) | groupID (group)
+	Type string `json:"type"` // send_private | send_group | ping
+
+	// private => receiver user id
+	// group   => group/chat id
+	To   string `json:"to"`
+
 	Body string `json:"body"`
 }
 
-// OutboundEvent : server -> client
+// server -> client
 type OutboundEvent struct {
-	Type    string   `json:"type"` // "message" | "error" | "pong"
+	Type    string   `json:"type"` // message | error | pong
 	Payload *Message `json:"payload,omitempty"`
 	Error   string   `json:"error,omitempty"`
 }
