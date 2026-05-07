@@ -123,26 +123,55 @@ func (r *Repository) saveMessage(ctx context.Context, chatID, chatType, senderID
 func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, error) {
 	var m Message
 	var sender UserInfo
-	// chat_id is selected but only used internally — not part of Message struct
-	var chatID string
+
 	err := r.db.QueryRowContext(ctx, `
-		SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
-		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
+		SELECT
+			m.id,
+			m.chat_id,
+			c.type,
+			m.sender_id,
+			m.body,
+			m.created_at,
+
+			u.first_name,
+			u.last_name,
+			COALESCE(u.nickname, ''),
+			COALESCE(u.avatar_path, '')
+
 		FROM chat_messages m
-		JOIN users u ON u.id = m.sender_id
+
+		JOIN chats c
+			ON c.id = m.chat_id
+
+		JOIN users u
+			ON u.id = m.sender_id
+
 		WHERE m.id = ?;
 	`, id).Scan(
-		&m.ID, &chatID, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
-		&sender.FirstName, &sender.LastName, &sender.Nickname, &sender.AvatarPath,
+		&m.ID,
+		&m.ChatID,
+		&m.ChatType,
+		&m.SenderID,
+		&m.Body,
+		&m.CreatedAt,
+
+		&sender.FirstName,
+		&sender.LastName,
+		&sender.Nickname,
+		&sender.AvatarPath,
 	)
+
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, errors.New("message not found")
 	}
+
 	if err != nil {
 		return Message{}, err
 	}
+
 	sender.ID = m.SenderID
 	m.Sender = &sender
+
 	return m, nil
 }
 
