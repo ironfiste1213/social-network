@@ -31,24 +31,6 @@ func (r *Repository) getUserBySessionID(ctx context.Context, sessionID string) (
 	return userID, err
 }
 
-// privateChatID is internal — never exposed to frontend.
-func (r *Repository) privateChatID(a, b string) string {
-	ids := []string{a, b}
-	sort.Strings(ids)
-	return "private:" + ids[0] + ":" + ids[1]
-}
-
-func otherUserFromChatID(chatID, myID string) string {
-	trimmed := strings.TrimPrefix(chatID, "private:")
-	parts := strings.SplitN(trimmed, ":", 2)
-	if len(parts) != 2 {
-		return ""
-	}
-	if parts[0] == myID {
-		return parts[1]
-	}
-	return parts[0]
-}
 
 func (r *Repository) CanChatPrivate(ctx context.Context, senderID, receiverID string) (bool, error) {
 	var count int
@@ -107,19 +89,24 @@ func (r *Repository) SaveGroupMessage(ctx context.Context, groupID, senderID, bo
 	 msg.TargetID = groupID
 	 return msg, nil
 }
-
-func (r *Repository) saveMessage(ctx context.Context, chatID, chatType, senderID, body string) (Message, error) {
+func (r *Repository) saveMessage(ctx context.Context, chatID string,  senderID string, body string) (Message, error) {
 	id := uuid.NewString()
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO chat_messages (id, chat_id, chat_type, sender_id, body)
-		VALUES (?, ?, ?, ?, ?);
-	`, id, chatID, chatType, senderID, body)
+		INSERT INTO chat_messages (
+			id,
+			chat_id,
+			sender_id,
+			body
+		)
+		VALUES (?, ?, ?, ?);
+	`, id, chatID, senderID, body)
+
 	if err != nil {
 		return Message{}, fmt.Errorf("save message: %w", err)
 	}
+
 	return r.getMessageByID(ctx, id)
 }
-
 func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, error) {
 	var m Message
 	var sender UserInfo
@@ -175,66 +162,83 @@ func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, er
 	return m, nil
 }
 
-func (r *Repository) GetHistory(ctx context.Context, chatID, beforeID string, limit int) ([]Message, error) {
+func (r *Repository) GetHistory( ctx context.Context, chatID string, beforeMessageID string, limit int) ([]Message, error) {
+
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	query := `
+		SELECT
+			m.id,
+			m.chat_id,
+			m.sender_id,
+			m.body,
+			m.created_at,
+			u.id,
+			u.first_name,
+			u.last_name,
+			COALESCE(u.nickname,''),
+			COALESCE(u.avatar_path,'')
+		FROM chat_messages m
+		JOIN users u ON u.id = m.sender_id
+		WHERE m.chat_id = ?
+	`
 
-	if beforeID == "" {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
-			       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
-			FROM chat_messages m
-			JOIN users u ON u.id = m.sender_id
-			WHERE m.chat_id = ?
-			ORDER BY m.created_at DESC
-			LIMIT ?;
-		`, chatID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT m.id, m.chat_id, m.chat_type, m.sender_id, m.body, m.created_at,
-			       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
-			FROM chat_messages m
-			JOIN users u ON u.id = m.sender_id
-			WHERE m.chat_id = ?
-			  AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = ?)
-			ORDER BY m.created_at DESC
-			LIMIT ?;
-		`, chatID, beforeID, limit)
+	args := []any{chatID}
+
+	if beforeMessageID != "" {
+		query += `
+			AND m.created_at < (
+				SELECT created_at FROM chat_messages WHERE id = ?
+			)
+		`
+		args = append(args, beforeMessageID)
 	}
+
+	query += `
+		ORDER BY m.created_at DESC
+		LIMIT ?
+	`
+
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var msgs []Message
+
 	for rows.Next() {
 		var m Message
 		var sender UserInfo
-		var chatIDScanned string // scanned but not put in Message
+
 		if err := rows.Scan(
-			&m.ID, &chatIDScanned, &m.ChatType, &m.SenderID, &m.Body, &m.CreatedAt,
-			&sender.FirstName, &sender.LastName, &sender.Nickname, &sender.AvatarPath,
+			&m.ID,
+			&m.ChatID,
+			&m.SenderID,
+			&m.Body,
+			&m.CreatedAt,
+			&sender.ID,
+			&sender.FirstName,
+			&sender.LastName,
+			&sender.Nickname,
+			&sender.AvatarPath,
 		); err != nil {
 			return nil, err
 		}
-		sender.ID = m.SenderID
+
 		m.Sender = &sender
 		msgs = append(msgs, m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
-	return msgs, nil
+
+	return msgs, rows.Err()
 }
 
 func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Conversation, error) {
@@ -296,4 +300,60 @@ func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Con
 		convos = append(convos, c)
 	}
 	return convos, rows.Err()
+}
+
+
+
+
+func (r *Repository) GetOrCreatePrivateChat(ctx context.Context, userA string, userB string) (string, error) {
+
+	// sort users to make stable private_key
+	privateKey := userA + ":" + userB
+	if userB < userA {
+		privateKey = userB + ":" + userA
+	}
+
+	// try existing chat
+	var chatID string
+
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM chats WHERE type = 'private' AND private_key = ? LIMIT 1;`, privateKey).Scan(&chatID)
+
+	if err == nil {
+		return chatID, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+
+	// create new chat
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	chatID = uuid.NewString()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO chats (id, type, private_key)
+		VALUES (?, 'private', ?);
+	`, chatID, privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO chat_participants (chat_id, user_id)
+		VALUES (?, ?), (?, ?);
+	`, chatID, userA, chatID, userB)
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+
+	return chatID, nil
 }
