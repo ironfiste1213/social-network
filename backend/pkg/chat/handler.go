@@ -1,14 +1,16 @@
 package chat
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/gorilla/websocket"
 	"social-network/backend/pkg/response"
 	"social-network/backend/pkg/sessionauth"
+
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -42,7 +44,8 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	client := NewClient(userID, h.service.hub, h.service, conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	client := NewClient(userID, h.service.hub, h.service, conn, ctx, cancel)
 	h.service.hub.register <- client
 	go client.WritePump()
 	go client.ReadPump()

@@ -30,7 +30,6 @@ func (s *Service) CurrentUserID(ctx context.Context, sessionID string) (string, 
 
 // HandlePrivateMessage — senderID from auth, chat_id generated in repo.
 func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
-	ctx := context.Background()
 
 	if strings.TrimSpace(event.Body) == "" || strings.TrimSpace(event.To) == "" {
 		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
@@ -41,7 +40,7 @@ func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	allowed, err := s.repo.CanChatPrivate(ctx, c.userID, event.To)
+	allowed, err := s.repo.CanChatPrivate(c.ctx, c.userID, event.To)
 	if err != nil {
 		fmt.Printf("[CHAT][SERVICE] CanChatPrivate error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "internal error"}
@@ -52,7 +51,7 @@ func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	msg, err := s.repo.SavePrivateMessage(ctx, c.userID, event.To, strings.TrimSpace(event.Body))
+	msg, err := s.repo.SavePrivateMessage(c.ctx, c.userID, event.To, strings.TrimSpace(event.Body))
 	if err != nil {
 		fmt.Printf("[CHAT][SERVICE] SavePrivateMessage error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
@@ -64,14 +63,13 @@ func (s *Service) HandlePrivateMessage(c *Client, event InboundEvent) {
 
 // HandleGroupMessage — senderID from auth, chat_id = groupID assigned in repo.
 func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
-	ctx := context.Background()
 
 	if strings.TrimSpace(event.Body) == "" || strings.TrimSpace(event.To) == "" {
 		c.send <- OutboundEvent{Type: "error", Error: "to and body are required"}
 		return
 	}
 
-	isMember, err := s.repo.IsGroupMember(ctx, event.To, c.userID)
+	isMember, err := s.repo.IsGroupMember(c.ctx, event.To, c.userID)
 	if err != nil {
 		fmt.Printf("[CHAT][SERVICE] IsGroupMember error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "internal error"}
@@ -82,14 +80,14 @@ func (s *Service) HandleGroupMessage(c *Client, event InboundEvent) {
 		return
 	}
 
-	msg, err := s.repo.SaveGroupMessage(ctx, event.To, c.userID, strings.TrimSpace(event.Body))
+	msg, err := s.repo.SaveGroupMessage(c.ctx, event.To, c.userID, strings.TrimSpace(event.Body))
 	if err != nil {
 		fmt.Printf("[CHAT][SERVICE] SaveGroupMessage error: %v\n", err)
 		c.send <- OutboundEvent{Type: "error", Error: "failed to save message"}
 		return
 	}
 
-	memberIDs, err := s.repo.GetGroupMemberIDs(ctx, event.To)
+	memberIDs, err := s.repo.GetGroupMemberIDs(c.ctx, event.To)
 	if err != nil {
 		fmt.Printf("[CHAT][SERVICE] GetGroupMemberIDs error: %v\n", err)
 		return

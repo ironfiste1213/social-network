@@ -1,9 +1,11 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -17,18 +19,22 @@ const (
 // Client is one WebSocket connection tied to a user.
 type Client struct {
 	userID  string
+	ctx     context.Context
+	cancel context.CancelFunc
 	hub     *Hub
 	service *Service
 	conn    *websocket.Conn
 	send    chan OutboundEvent // buffered; hub writes here
 }
 
-func NewClient(userID string, hub *Hub, service *Service, conn *websocket.Conn) *Client {
+func NewClient(userID string, hub *Hub, service *Service, conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc) *Client {
 	return &Client{
 		userID:  userID,
 		hub:     hub,
 		service: service,
 		conn:    conn,
+		ctx: ctx,
+		cancel: cancel,
 		send:    make(chan OutboundEvent, 64),
 	}
 }
