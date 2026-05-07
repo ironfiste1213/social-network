@@ -118,7 +118,7 @@ func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, er
 			m.sender_id,
 			m.body,
 			m.created_at,
-
+			u.id,
 			u.first_name,
 			u.last_name,
 			COALESCE(u.nickname, ''),
@@ -140,7 +140,7 @@ func (r *Repository) getMessageByID(ctx context.Context, id string) (Message, er
 		&m.SenderID,
 		&m.Body,
 		&m.CreatedAt,
-
+        &sender.ID,
 		&sender.FirstName,
 		&sender.LastName,
 		&sender.Nickname,
@@ -239,10 +239,7 @@ func (r *Repository) GetHistory(ctx context.Context, chatID string, beforeMessag
 	return msgs, rows.Err()
 }
 
-func (r *Repository) GetConversations(
-	ctx context.Context,
-	userID string,
-) ([]Conversation, error) {
+func (r *Repository) GetConversations( ctx context.Context, userID string) ([]Conversation, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			c.id,
