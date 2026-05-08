@@ -171,7 +171,7 @@ func (h *Handler) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	limit := 0
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsedLimit, err := strconv.Atoi(rawLimit)
-		if err != nil {
+		if err != nil || parsedLimit <= 0 || parsedLimit > 100 {
 			response.Error(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
