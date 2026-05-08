@@ -85,7 +85,11 @@ func (r *Repository) SavePrivateMessage(ctx context.Context, senderID, receiverI
 
 // done !!
 func (r *Repository) SaveGroupMessage(ctx context.Context, groupID, senderID, body string) (Message, error) {
-	return r.saveMessage(ctx, groupID, senderID, body)
+	chatID, err := r.GetOrCreateGroupChat(ctx, groupID)
+	if err != nil {
+		return Message{}, err
+	}
+	return r.saveMessage(ctx, chatID, senderID, body)
 }
 
 // done !
@@ -343,12 +347,51 @@ func (r *Repository) GetOrCreatePrivateChat(ctx context.Context, userA string, u
 	return chatID, nil
 }
 
+func (r *Repository) GetOrCreateGroupChat(ctx context.Context, groupID string) (string, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
 
-func (r *Repository) GetPrivateChatID(
-	ctx context.Context,
-	userA,
-	userB string,
-) (string, bool, error) {
+	var chatType string
+	err = tx.QueryRowContext(ctx, `SELECT type FROM chats WHERE id = ? LIMIT 1;`, groupID).Scan(&chatType)
+	switch {
+	case err == nil:
+		if chatType != string(ChatTypeGroup) {
+			return "", fmt.Errorf("chat id already exists with type %q", chatType)
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO chats (id, type)
+			VALUES (?, 'group');
+		`, groupID)
+		if err != nil {
+			return "", err
+		}
+	default:
+		return "", err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO chat_participants (chat_id, user_id)
+		SELECT ?, gm.user_id
+		FROM group_members gm
+		WHERE gm.group_id = ?;
+	`, groupID, groupID)
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+
+	return groupID, nil
+}
+
+
+func (r *Repository) GetPrivateChatID( ctx context.Context, userA, userB string) (string, bool, error) {
 
 	query := `
 		SELECT c.id
