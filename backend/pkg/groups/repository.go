@@ -51,7 +51,6 @@ func (r *Repository) CreateGroup(ctx context.Context, creatorID string, input Cr
 	return r.GetGroupByID(ctx, id, creatorID)
 }
 
-
 func (r *Repository) GetGroupByID(ctx context.Context, groupID, viewerID string) (Group, error) {
 	var g Group
 	var creator UserSummary
@@ -179,7 +178,6 @@ func (r *Repository) UserExists(ctx context.Context, userID string) (bool, error
 	return exists == 1, err
 }
 
-
 func (r *Repository) GetMembershipRole(ctx context.Context, groupID, userID string) (string, bool, error) {
 	var role string
 	err := r.db.QueryRowContext(ctx, `
@@ -192,7 +190,6 @@ func (r *Repository) GetMembershipRole(ctx context.Context, groupID, userID stri
 	}
 	return role, err == nil, err
 }
-
 
 func (r *Repository) GetPendingJoinRequest(ctx context.Context, groupID, userID string) (string, bool, error) {
 	var requestID string
@@ -207,8 +204,6 @@ func (r *Repository) GetPendingJoinRequest(ctx context.Context, groupID, userID 
 	}
 	return requestID, err == nil, err
 }
-
-
 
 func (r *Repository) GetPendingInvitation(ctx context.Context, groupID, userID string) (string, bool, error) {
 	var invitationID string
@@ -344,6 +339,16 @@ func (r *Repository) AcceptJoinRequest(ctx context.Context, requestID string) er
 		INSERT OR IGNORE INTO group_members (group_id, user_id, member_role)
 		VALUES (?, ?, 'member');
 	`, groupID, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO chat_participants (chat_id, user_id)
+		SELECT c.id, ?
+		FROM chats c
+		WHERE c.id = ? AND c.type = 'group';
+	`, userID, groupID)
 	if err != nil {
 		return err
 	}
@@ -555,6 +560,16 @@ func (r *Repository) AcceptInvitation(ctx context.Context, invitationID string) 
 		INSERT OR IGNORE INTO group_members (group_id, user_id, member_role)
 		VALUES (?, ?, 'member');
 	`, groupID, inviteeID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO chat_participants (chat_id, user_id)
+		SELECT c.id, ?
+		FROM chats c
+		WHERE c.id = ? AND c.type = 'group';
+	`, inviteeID, groupID)
 	if err != nil {
 		return err
 	}
