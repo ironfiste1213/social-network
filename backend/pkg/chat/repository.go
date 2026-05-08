@@ -255,11 +255,20 @@ func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Con
 		SELECT
 			c.id,
 			c.type,
+			COALESCE(g.title, ''),
+			COALESCE(uo.id, ''),
+			COALESCE(uo.first_name, ''),
+			COALESCE(uo.last_name, ''),
+			COALESCE(uo.nickname, ''),
+			COALESCE(uo.avatar_path, ''),
 			m.body,
 			m.created_at
 		FROM chats c
 		JOIN chat_participants p ON p.chat_id = c.id
 		JOIN chat_messages m ON m.chat_id = c.id
+		LEFT JOIN groups g ON g.id = c.id AND c.type = 'group'
+		LEFT JOIN chat_participants po ON po.chat_id = c.id AND po.user_id != ? AND c.type = 'private'
+		LEFT JOIN users uo ON uo.id = po.user_id
 		WHERE p.user_id = ?
 		AND m.created_at = (
 			SELECT MAX(created_at)
@@ -267,7 +276,7 @@ func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Con
 			WHERE chat_id = c.id
 		)
 		ORDER BY m.created_at DESC;
-	`, userID)
+	`, userID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,20 +288,53 @@ func (r *Repository) GetConversations(ctx context.Context, userID string) ([]Con
 		var (
 			chatID   string
 			chatType string
+			groupTitle string
+			otherID string
+			otherFirst string
+			otherLast string
+			otherNick string
+			otherAvatar string
 			lastMsg  string
 			lastAt   time.Time
 		)
 
-		if err := rows.Scan(&chatID, &chatType, &lastMsg, &lastAt); err != nil {
+		if err := rows.Scan(
+			&chatID,
+			&chatType,
+			&groupTitle,
+			&otherID,
+			&otherFirst,
+			&otherLast,
+			&otherNick,
+			&otherAvatar,
+			&lastMsg,
+			&lastAt,
+		); err != nil {
 			return nil, err
 		}
 
-		convos = append(convos, Conversation{
+		convo := Conversation{
 			ChatID:      chatID,
 			ChatType:    ChatType(chatType),
 			LastMessage: lastMsg,
 			LastAt:      lastAt,
-		})
+		}
+
+		if convo.ChatType == ChatTypePrivate && otherID != "" {
+			convo.Participant = &UserInfo{
+				ID:         otherID,
+				FirstName:  otherFirst,
+				LastName:   otherLast,
+				Nickname:   otherNick,
+				AvatarPath: otherAvatar,
+			}
+		}
+
+		if convo.ChatType == ChatTypeGroup {
+			convo.GroupTitle = groupTitle
+		}
+
+		convos = append(convos, convo)
 	}
 
 	return convos, rows.Err()
