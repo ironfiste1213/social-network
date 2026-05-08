@@ -177,6 +177,7 @@ func (r *Repository) GetHistory(ctx context.Context, chatID string, beforeMessag
 		SELECT
 			m.id,
 			m.chat_id,
+			c.type,
 			m.sender_id,
 			m.body,
 			m.created_at,
@@ -186,6 +187,7 @@ func (r *Repository) GetHistory(ctx context.Context, chatID string, beforeMessag
 			COALESCE(u.nickname,''),
 			COALESCE(u.avatar_path,'')
 		FROM chat_messages m
+		JOIN chats c ON c.id = m.chat_id
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.chat_id = ?
 	`
@@ -223,6 +225,7 @@ func (r *Repository) GetHistory(ctx context.Context, chatID string, beforeMessag
 		if err := rows.Scan(
 			&m.ID,
 			&m.ChatID,
+			&m.ChatType,
 			&m.SenderID,
 			&m.Body,
 			&m.CreatedAt,
