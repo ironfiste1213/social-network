@@ -344,37 +344,45 @@ func (r *Repository) GetOrCreatePrivateChat(ctx context.Context, userA string, u
 }
 
 
-func (r *Repository) GetPrivateChatID( ctx context.Context, user1, user2 string) (string, bool, error) {
+func (r *Repository) GetPrivateChatID(
+	ctx context.Context,
+	userA,
+	userB string,
+) (string, bool, error) {
 
-    query := `
-        SELECT id
-        FROM chats
-        WHERE type = 'private'
-        AND (
-            (user1_id = ? AND user2_id = ?)
-            OR
-            (user1_id = ? AND user2_id = ?)
-        )
-        LIMIT 1
-    `
+	query := `
+		SELECT c.id
+		FROM chats c
 
-    var chatID string
+		JOIN chat_participants p1
+			ON p1.chat_id = c.id
 
-    err := r.db.QueryRowContext(
-        ctx,
-        query,
-        user1,
-        user2,
-        user2,
-        user1,
-    ).Scan(&chatID)
+		JOIN chat_participants p2
+			ON p2.chat_id = c.id
 
-    if err != nil {
-        if errors.Is(err, sql.ErrNoRows) {
-            return "", false, nil
-        }
-        return "", false, err
-    }
+		WHERE c.type = 'private'
+		  AND p1.user_id = ?
+		  AND p2.user_id = ?
 
-    return chatID, true, nil
+		LIMIT 1;
+	`
+
+	var chatID string
+
+	err := r.db.QueryRowContext(
+		ctx,
+		query,
+		userA,
+		userB,
+	).Scan(&chatID)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+
+	if err != nil {
+		return "", false, err
+	}
+
+	return chatID, true, nil
 }
