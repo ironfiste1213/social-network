@@ -111,7 +111,7 @@ func (s *Service) GetPrivateHistory(ctx context.Context, senderID, receiverID, b
 		return nil, err
 	}
 	if !exists {
-		return nil, ErrForbidden
+		return []Message{}, nil
 	}
 	return s.repo.GetHistory(ctx, chatID, beforeID, limit)
 }
