@@ -126,7 +126,13 @@ func (s *Service) GetGroupHistory(ctx context.Context, groupID, requesterID, bef
 	if !isMember {
 		return nil, ErrForbidden
 	}
-	return s.repo.GetHistory(ctx, groupID, beforeID, limit)
+
+	chatID, err := s.repo.GetOrCreateGroupChat(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetHistory(ctx, chatID, beforeID, limit)
 }
 
 // GetConversations returns all conversations the user participated in.
