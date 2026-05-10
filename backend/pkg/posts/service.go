@@ -39,25 +39,25 @@ func (s *Service) CreatePost(ctx context.Context, authorID string, input CreateP
 	return s.repo.CreatePost(ctx, authorID, input)
 }
 
-func (s *Service) GetFeed(ctx context.Context, viewerID string, limit, offset int) ([]Post, error) {
+func (s *Service) GetFeed(ctx context.Context, viewerID string, limit int, beforeID string) ([]Post, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	return s.repo.GetFeedPosts(ctx, viewerID, limit, offset)
+	return s.repo.GetFeedPosts(ctx, viewerID, limit, beforeID)
 }
 
-func (s *Service) GetUserPosts(ctx context.Context, authorID, viewerID string, limit, offset int) ([]Post, error) {
+func (s *Service) GetUserPosts(ctx context.Context, authorID, viewerID string, limit int, beforeID string) ([]Post, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	return s.repo.GetUserPosts(ctx, authorID, viewerID, limit, offset)
+	return s.repo.GetUserPosts(ctx, authorID, viewerID, limit, beforeID)
 }
 
-func (s *Service) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit, offset int) ([]Post, error) {
+func (s *Service) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit int, beforeID string) ([]Post, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	return s.repo.GetGroupPosts(ctx, groupID, viewerID, limit, offset)
+	return s.repo.GetGroupPosts(ctx, groupID, viewerID, limit, beforeID)
 }
 
 func (s *Service) IsGroupMember(ctx context.Context, groupID, userID string) (bool, error) {

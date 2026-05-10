@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -108,8 +109,8 @@ func (r *Repository) GetGroupByID(ctx context.Context, groupID, viewerID string)
 	return g, nil
 }
 
-func (r *Repository) ListGroups(ctx context.Context, viewerID string, limit, offset int) ([]Group, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *Repository) ListGroups(ctx context.Context, viewerID string, limit int, beforeID string) ([]Group, error) {
+	query := `
 		SELECT g.id,
 		       g.title,
 		       COALESCE(g.group_description, ''),
@@ -128,9 +129,25 @@ func (r *Repository) ListGroups(ctx context.Context, viewerID string, limit, off
 		       COALESCE((SELECT gi.id FROM group_invitations gi WHERE gi.group_id = g.id AND gi.invitee_id = ? AND gi.status = 'pending' LIMIT 1), '')
 		FROM groups g
 		JOIN users u ON u.id = g.creator_id
-		ORDER BY g.created_at DESC
-		LIMIT ? OFFSET ?;
-	`, viewerID, viewerID, viewerID, viewerID, viewerID, viewerID, limit, offset)
+	`
+	args := []any{viewerID, viewerID, viewerID, viewerID, viewerID, viewerID}
+	if beforeID != "" {
+		beforeCreatedAt, err := r.getGroupCreatedAt(ctx, beforeID)
+		if err != nil {
+			return nil, err
+		}
+		query += `
+		WHERE (g.created_at < ? OR (g.created_at = ? AND g.id < ?))
+		`
+		args = append(args, beforeCreatedAt, beforeCreatedAt, beforeID)
+	}
+	query += `
+		ORDER BY g.created_at DESC, g.id DESC
+		LIMIT ?;
+	`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +187,15 @@ func (r *Repository) ListGroups(ctx context.Context, viewerID string, limit, off
 	}
 
 	return groups, rows.Err()
+}
+
+func (r *Repository) getGroupCreatedAt(ctx context.Context, groupID string) (time.Time, error) {
+	var createdAt time.Time
+	err := r.db.QueryRowContext(ctx, `SELECT created_at FROM groups WHERE id = ?;`, groupID).Scan(&createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	return createdAt, err
 }
 
 func (r *Repository) UserExists(ctx context.Context, userID string) (bool, error) {

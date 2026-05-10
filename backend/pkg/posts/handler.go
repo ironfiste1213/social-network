@@ -77,8 +77,8 @@ func (h *Handler) getGroupPosts(w http.ResponseWriter, r *http.Request, groupID 
 	if !ok {
 		return
 	}
-	limit, offset := parsePagination(r)
-	posts, err := h.service.GetGroupPosts(r.Context(), groupID, viewerID, limit, offset)
+	limit, beforeID := parsePostListQuery(r)
+	posts, err := h.service.GetGroupPosts(r.Context(), groupID, viewerID, limit, beforeID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to get group posts")
 		return
@@ -213,8 +213,8 @@ func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limit, offset := parsePagination(r)
-	posts, err := h.service.GetFeed(r.Context(), viewerID, limit, offset)
+	limit, beforeID := parsePostListQuery(r)
+	posts, err := h.service.GetFeed(r.Context(), viewerID, limit, beforeID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to get feed")
 		return
@@ -230,8 +230,8 @@ func (h *Handler) getUserPosts(w http.ResponseWriter, r *http.Request, authorID 
 	if !ok {
 		return
 	}
-	limit, offset := parsePagination(r)
-	posts, err := h.service.GetUserPosts(r.Context(), authorID, viewerID, limit, offset)
+	limit, beforeID := parsePostListQuery(r)
+	posts, err := h.service.GetUserPosts(r.Context(), authorID, viewerID, limit, beforeID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to get posts")
 		return
@@ -373,17 +373,12 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, 
 	return sessionauth.RequireUserID(w, r, h.service.CurrentUserID)
 }
 
-func parsePagination(r *http.Request) (limit, offset int) {
+func parsePostListQuery(r *http.Request) (limit int, beforeID string) {
 	limit = 20
-	offset = 0
+	beforeID = strings.TrimSpace(r.URL.Query().Get("before_id"))
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
 		}
 	}
 	return

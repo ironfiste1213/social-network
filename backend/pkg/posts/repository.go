@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -79,9 +80,9 @@ func (r *Repository) GetPostByID(ctx context.Context, id string) (Post, error) {
 	return r.attachAuthorAndViewers(ctx, p)
 }
 
-func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, offset int) ([]Post, error) {
+func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit int, beforeID string) ([]Post, error) {
 	// Feed = public posts from everyone + followers-only/selected posts from people viewer follows
-	rows, err := r.db.QueryContext(ctx, `
+	query := `
 		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
@@ -97,9 +98,25 @@ func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, o
 		        SELECT 1 FROM post_viewers pv WHERE pv.post_id = p.id AND pv.user_id = ?
 		    ))
 		  )
-		ORDER BY p.created_at DESC
-		LIMIT ? OFFSET ?;
-	`, viewerID, viewerID, viewerID, limit, offset)
+	`
+	args := []any{viewerID, viewerID, viewerID}
+	if beforeID != "" {
+		beforeCreatedAt, err := r.getPostCreatedAt(ctx, beforeID)
+		if err != nil {
+			return nil, err
+		}
+		query += `
+		  AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))
+		`
+		args = append(args, beforeCreatedAt, beforeCreatedAt, beforeID)
+	}
+	query += `
+		ORDER BY p.created_at DESC, p.id DESC
+		LIMIT ?;
+	`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -107,8 +124,8 @@ func (r *Repository) GetFeedPosts(ctx context.Context, viewerID string, limit, o
 	return r.scanPostRows(ctx, rows)
 }
 
-func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string, limit, offset int) ([]Post, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string, limit int, beforeID string) ([]Post, error) {
+	query := `
 		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
@@ -125,9 +142,25 @@ func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string
 		          SELECT 1 FROM post_viewers pv WHERE pv.post_id = p.id AND pv.user_id = ?
 		      ))
 		  )
-		ORDER BY p.created_at DESC
-		LIMIT ? OFFSET ?;
-	`, authorID, viewerID, viewerID, viewerID, limit, offset)
+	`
+	args := []any{authorID, viewerID, viewerID, viewerID}
+	if beforeID != "" {
+		beforeCreatedAt, err := r.getPostCreatedAt(ctx, beforeID)
+		if err != nil {
+			return nil, err
+		}
+		query += `
+		  AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))
+		`
+		args = append(args, beforeCreatedAt, beforeCreatedAt, beforeID)
+	}
+	query += `
+		ORDER BY p.created_at DESC, p.id DESC
+		LIMIT ?;
+	`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +168,8 @@ func (r *Repository) GetUserPosts(ctx context.Context, authorID, viewerID string
 	return r.scanPostRows(ctx, rows)
 }
 
-func (r *Repository) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit, offset int) ([]Post, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *Repository) GetGroupPosts(ctx context.Context, groupID, viewerID string, limit int, beforeID string) ([]Post, error) {
+	query := `
 		SELECT DISTINCT p.id, p.author_id, p.group_id, p.body, p.image_path, p.privacy, p.created_at, p.updated_at,
 		       u.first_name, u.last_name, COALESCE(u.nickname,''), COALESCE(u.avatar_path,'')
 		FROM posts p
@@ -145,14 +178,39 @@ func (r *Repository) GetGroupPosts(ctx context.Context, groupID, viewerID string
 		  AND EXISTS (
 		      SELECT 1 FROM group_members gm WHERE gm.group_id = ? AND gm.user_id = ?
 		  )
-		ORDER BY p.created_at DESC
-		LIMIT ? OFFSET ?;
-	`, groupID, groupID, viewerID, limit, offset)
+	`
+	args := []any{groupID, groupID, viewerID}
+	if beforeID != "" {
+		beforeCreatedAt, err := r.getPostCreatedAt(ctx, beforeID)
+		if err != nil {
+			return nil, err
+		}
+		query += `
+		  AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))
+		`
+		args = append(args, beforeCreatedAt, beforeCreatedAt, beforeID)
+	}
+	query += `
+		ORDER BY p.created_at DESC, p.id DESC
+		LIMIT ?;
+	`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return r.scanPostRows(ctx, rows)
+}
+
+func (r *Repository) getPostCreatedAt(ctx context.Context, postID string) (time.Time, error) {
+	var createdAt time.Time
+	err := r.db.QueryRowContext(ctx, `SELECT created_at FROM posts WHERE id = ?;`, postID).Scan(&createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	return createdAt, err
 }
 
 func (r *Repository) DeletePost(ctx context.Context, id, authorID string) error {

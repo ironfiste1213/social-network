@@ -188,8 +188,8 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePagination(r)
-	groups, err := h.service.ListGroups(r.Context(), userID, limit, offset)
+	limit, beforeID := parseListQuery(r)
+	groups, err := h.service.ListGroups(r.Context(), userID, limit, beforeID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to list groups")
 		return
@@ -437,9 +437,9 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, 
 	return sessionauth.RequireUserID(w, r, h.service.CurrentUserID)
 }
 
-func parsePagination(r *http.Request) (limit, offset int) {
+func parseListQuery(r *http.Request) (limit int, beforeID string) {
 	limit = 20
-	offset = 0
+	beforeID = strings.TrimSpace(r.URL.Query().Get("before_id"))
 
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -447,11 +447,5 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		}
 	}
 
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
-		}
-	}
-
-	return limit, offset
+	return limit, beforeID
 }

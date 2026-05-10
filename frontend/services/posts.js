@@ -28,8 +28,8 @@ function toQuery(params = {}) {
 }
 
 // GET /posts
-export function getFeedPosts({ limit = 20, offset = 0 } = {}) {
-  return apiRequest(`/posts${toQuery({ limit, offset })}`);
+export function getFeedPosts({ limit = 20, beforeId } = {}) {
+  return apiRequest(`/posts${toQuery({ limit, before_id: beforeId })}`);
 }
 
 // POST /posts
@@ -75,13 +75,13 @@ export function getMyFollowersForPostVisibility() {
 }
 
 // GET /users/:id/posts
-export function getUserPosts(userId, { limit = 20, offset = 0 } = {}) {
-  return apiRequest(`/users/${userId}/posts${toQuery({ limit, offset })}`);
+export function getUserPosts(userId, { limit = 20, beforeId } = {}) {
+  return apiRequest(`/users/${userId}/posts${toQuery({ limit, before_id: beforeId })}`);
 }
 
 // GET /groups/:groupID/posts
-export function getGroupPosts(groupId, { limit = 20, offset = 0 } = {}) {
-  return apiRequest(`/groups/${groupId}/posts${toQuery({ limit, offset })}`);
+export function getGroupPosts(groupId, { limit = 20, beforeId } = {}) {
+  return apiRequest(`/groups/${groupId}/posts${toQuery({ limit, before_id: beforeId })}`);
 }
 
 // POST /groups/:groupID/posts
@@ -91,4 +91,3 @@ export function createGroupPost(groupId, data) {
     body: JSON.stringify(data),
   });
 }
-

@@ -30,14 +30,11 @@ func (s *Service) CreateGroup(ctx context.Context, creatorID string, input Creat
 	return s.repo.CreateGroup(ctx, creatorID, input)
 }
 
-func (s *Service) ListGroups(ctx context.Context, viewerID string, limit, offset int) ([]Group, error) {
+func (s *Service) ListGroups(ctx context.Context, viewerID string, limit int, beforeID string) ([]Group, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return s.repo.ListGroups(ctx, viewerID, limit, offset)
+	return s.repo.ListGroups(ctx, viewerID, limit, beforeID)
 }
 
 func (s *Service) GetGroup(ctx context.Context, groupID, viewerID string) (Group, error) {
