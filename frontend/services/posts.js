@@ -92,6 +92,25 @@ export function createGroupPost(groupId, data) {
   });
 }
 
+// POST /groups/:groupID/posts/:postID/image (multipart)
+export async function uploadGroupPostImage(groupId, postId, file) {
+  const form = new FormData();
+  form.append('image', file);
+
+  const response = await fetch(`${API_BASE}/groups/${groupId}/posts/${postId}/image`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // GET /posts/:postID/comments
 export function getComments(postId) {
   return apiRequest(`/posts/${postId}/comments`);
