@@ -91,3 +91,23 @@ export function createGroupPost(groupId, data) {
     body: JSON.stringify(data),
   });
 }
+
+// GET /posts/:postID/comments
+export function getComments(postId) {
+  return apiRequest(`/posts/${postId}/comments`);
+}
+
+// POST /posts/:postID/comments
+export function createComment(postId, data) {
+  return apiRequest(`/posts/${postId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// DELETE /posts/:postID/comments/:commentID
+export function deleteComment(postId, commentId) {
+  return apiRequest(`/posts/${postId}/comments/${commentId}`, {
+    method: 'DELETE',
+  });
+}
